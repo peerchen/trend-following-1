@@ -1,3 +1,5 @@
+# Not import ... as ...  for parallel computing.
+
 import itertools
 import numpy
 import pandas
@@ -6,7 +8,7 @@ from datetime import datetime
 import matplotlib
 from matplotlib import pyplot
 import matplotlib.transforms
-
+from utils import *
 
 
 def dict_list_to_DataFrame(dl): 
@@ -34,6 +36,7 @@ class Trading_Strategy:
         """
         self.dates = prices.index
         self.first_trading_day = None
+        self.last_trading_day = None
         self.prices_df = prices
         self.prices = {s: prices[s].values for s in list(prices.keys())}
         self.heat = heat
@@ -171,7 +174,6 @@ class Trading_Strategy:
                 balance -= amount * buy_price
                 self.trades.append(trade)
 
-        
         if position != 0:
             open_profit = position * (tp['Close'] - self.trades[-1]['Price'])
         else:
@@ -213,10 +215,12 @@ class Trading_Strategy:
         elif type(end) == float:
             end = self.dates[int(len(self.dates) * end)]
         
+        
         if warmup < 1:
             warmup = int(len(self.dates) * warmup)
             
         self.first_trading_day = self.dates[warmup]
+        self.last_trading_day = end
         
         for i in range(1, len(self.dates)):
             self.today_prices = {k: self.prices[k][i] for k in self.prices.keys()}
@@ -235,7 +239,12 @@ class Trading_Strategy:
                 max_drawdown = min(drawdown, max_drawdown)
                 
             if self.dates[i] > end:
-                break
+                self.equity['Available_Balance'][i] = self.equity['Available_Balance'][i - 1]
+                self.equity['Closing_Balance'][i] = self.equity['Closing_Balance'][i - 1]
+                self.equity['Position'][i] = self.equity['Position'][i - 1]
+                self.equity['Open_Profit'][i] =  self.equity['Position'][i] * (self.prices['Close'][i] - self.trades[-1]['Price'])
+                self.equity['Position_Value'][i] = self.equity['Position'][i] * self.prices['Close'][i]
+                self.equity['Equity'][i] = self.equity['Equity'][i - 1]
         
         self.max_drawdown = max_drawdown
         self.compute_performance()
@@ -246,7 +255,7 @@ class Trading_Strategy:
         Computes performance indicators for the trading strategy.
         """
         
-        self.performance['Years'] = (self.dates[-1] - self.first_trading_day).days / 364.25
+        self.performance['Years'] = (self.last_trading_day - self.first_trading_day).days / 364.25
         self.performance['Ratio'] = self.equity['Equity'][-1] / self.equity['Equity'][0]
         # Instantaneously Compounding Annual Gain
         self.performance['ICAGR'] = numpy.log(self.performance['Ratio']) / self.performance['Years']
@@ -477,10 +486,6 @@ class RS_Trading_Strategy(Trading_Strategy):
 
 
 
-
-
-
-
 def test_RS_Trading_Strategy():
     """
     Make sure the results match those on http://www.seykota.com/tribe/TSP/SR/index.htm..
@@ -523,4 +528,49 @@ def test_RS_Trading_Strategy():
 
 
 
-test_RS_Trading_Strategy()
+
+
+
+
+def grid_search(price_df, name="",
+                min_days=20, max_days=400, step=100, min_dif=50,
+                warmup=None, tr_size=0.5, heat=0.05, equity=1e6,
+                return_df=True):
+    
+    slow = numpy.arange(min_days, max_days, step)
+    fast = numpy.arange(min_days, max_days, step)
+
+    res_train = []
+    res_val = []
+    for s, f in itertools.product(slow, fast):
+        if f > (s - 50): 
+            continue
+        else:
+            # Training
+            if warmup is None:
+                warmup = s
+            
+            rs_train = RS_Trading_Strategy(price_df, equity=equity, heat=heat,
+                                           days_fast=f, 
+                                           days_slow=s,
+                                           name=name)
+            rs_train.excecute(warmup=warmup, end = tr_size)
+            res_train.append({'Name': name, 'Slow': s, 'Fast': f, 'Type': 'Train', **rs_train.performance})
+
+            # Validation
+            rs_val = RS_Trading_Strategy(price_df, equity=equity, heat=heat,
+                                         days_fast=f, 
+                                         days_slow=s,
+                                         name=name)
+            rs_val.excecute(warmup=tr_size)
+            res_val.append({'Name': name, 'Slow': s, 'Fast': f, 'Type': 'Validation', **rs_val.performance})
+
+
+    if return_df:
+        res_train = dict_list_to_DataFrame(res_train)
+        res_val = dict_list_to_DataFrame(res_val)
+        out = pandas.concat([res_train, res_val])
+        return out
+    else:
+        return res_train, res_val
+

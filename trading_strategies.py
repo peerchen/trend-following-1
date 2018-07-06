@@ -16,7 +16,7 @@ class Trading_Strategy:
     Class that performs a trading strategy on a single asset.
     """
     
-    def __init__(self, prices, equity=100, heat=0.05, position_step=100, name='', **kwargs):
+    def __init__(self, prices, equity=1e6, heat=0.05, position_step=100, name='', **kwargs):
         """
         Defines the initial state and hyper parameters of the trading strategy.
         

@@ -27,6 +27,10 @@ def plot_prices(prices, name=''):
     ax.legend()
 
 
+def daily_to_weekly_prices(d_prices):
+    return d_prices.resample(rule='W-FRI').apply({'Open': 'first', 'Close': 'last', 'High': 'max', 'Low': 'min', 'Volume': 'sum'})
+
+
 # Data loading
 
 QUANDL_PATH = 'input/Quandl/'
@@ -149,4 +153,47 @@ def get_quandl_edi(exchanges = 'XNAS', free=True, download=False, flatten=True, 
     out = {k: i[['Open', 'High', 'Low', 'Close', 'Volume']] for k, i in out.items()}
 
     return out
+
+
+def get_quandl_sharadar(free=True, download=False):
+    """
+    Downloads price series from Quandl dataset Sharadar Equity Prices
+    
+    Parameters
+    ----------
+    free : If True, only free sample prices are downloaded.
+    download : 
+        If True, downloads the prices from quandl.  
+        If False, looks for previously downloaded results in the QUANDL_PATH folder.
+    
+    Returns
+    -------
+    out : a dict of pandas DataFrame for each ticker.
+    """
+    
+    if free:
+        if download:
+            sharadar = quandl.get_table('SHARADAR/SEP', paginate=True)
+            sharadar = sharadar.rename({n: n.title() for n in sharadar.keys().values}, axis=1)
+            sharadar.reset_index().drop('None', axis=1).to_feather(fname='input/Quandl/sharadar_free.feather')
+        else:
+            sharadar = pandas.read_feather(path='input/Quandl/sharadar_free.feather')
+            
+    else:
+        if download:
+            sharadar = pandas.read_csv(filepath_or_buffer='input/Quandl/sharadar_full.csv')
+            sharadar = sharadar.rename({n: n.title() for n in sharadar.keys().values}, axis=1)
+            sharadar.to_feather(fname='input/Quandl/sharadar_full.feather')
+        else:
+            sharadar = pandas.read_feather(path='input/Quandl/sharadar_full.feather')
+    
+    tickers = list(set(sharadar.Ticker))
+    sharadar.Date = pandas.to_datetime(sharadar.Date)
+    sharadar = sharadar.set_index(['Ticker', 'Date'])
+    
+    return tickers, sharadar
+
+
+def get_price_j(ticker, prices_df):
+    return prices_df.loc[ticker]
 

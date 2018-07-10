@@ -28,7 +28,11 @@ def plot_prices(prices, name=''):
 
 
 def daily_to_weekly_prices(d_prices):
-    return d_prices.resample(rule='W-FRI').apply({'Open': 'first', 'Close': 'last', 'High': 'max', 'Low': 'min', 'Volume': 'sum'})
+    return d_prices.resample(rule='W-FRI').apply({'Open': 'first',
+                                                  'Close': 'last',
+                                                  'High': 'max',
+                                                  'Low': 'min',
+                                                  'Volume': 'sum'})
 
 
 # Data loading
@@ -96,7 +100,9 @@ def saf_quandl_get(dataset, **kwargs):
         return None
 
 
-def get_quandl_edi(exchanges = 'XNAS', free=True, download=False, flatten=True, verbose=False):
+def get_quandl_edi(exchanges = 'XNAS',
+                   free=True, download=False,return_df=True,
+                   verbose=False):
     """
     Downloads price series from Quandl vendor Exchange Data International
     
@@ -108,11 +114,10 @@ def get_quandl_edi(exchanges = 'XNAS', free=True, download=False, flatten=True, 
         If True, downloads the prices from quandl.  
         If False, looks for previously downloaded results in the QUANDL_PATH folder.
     verbose : If True, prints downloaded tickers.
-    flatten: If True, returns a flattened dict with the results.
     
     Returns
     -------
-    out : a dict or dict of dicts, of pandas DataFrame for each ticker.
+    out : a dict of pandas DataFrame for each ticker.
     """
     
     out = dict()
@@ -122,7 +127,8 @@ def get_quandl_edi(exchanges = 'XNAS', free=True, download=False, flatten=True, 
             
             prices = pandas.read_csv(QUANDL_PATH + x + '.csv', names=['Ticker', 'Desc.'])
             free_sample = QUANDL_FREE_SAMPLES_EDI[x]
-            which_free = [re.search('|'.join(free_sample), t) is not None and re.search('_UADJ', t) is None
+            which_free = [re.search('|'.join(free_sample), t) is not None and
+                          re.search('_UADJ', t) is None
                           for t in prices['Ticker']]
             if free: 
                 prices = prices[which_free]
@@ -147,12 +153,22 @@ def get_quandl_edi(exchanges = 'XNAS', free=True, download=False, flatten=True, 
             except:
                 pass
     
-    if flatten:
-        out = {k: i for x in out.keys() for k, i in out[x].items()}
     
+    out = {k: i for x in out.keys() for k, i in out[x].items()}
     out = {k: i[['Open', 'High', 'Low', 'Close', 'Volume']] for k, i in out.items()}
-
-    return out
+    
+    if return_df:
+        
+        def add_ticker(price, ticker):
+            price['Ticker'] = ticker
+            return price.reset_index().set_index(['Ticker', 'Date'])
+        
+        tickers = list(out.keys())
+        out = pandas.concat([add_ticker(out[t], t) for t in tickers])
+        
+        return tickers, out
+    else:
+        return out
 
 
 def get_quandl_sharadar(free=True, download=False):
@@ -175,7 +191,8 @@ def get_quandl_sharadar(free=True, download=False):
         if download:
             sharadar = quandl.get_table('SHARADAR/SEP', paginate=True)
             sharadar = sharadar.rename({n: n.title() for n in sharadar.keys().values}, axis=1)
-            sharadar.reset_index().drop('None', axis=1).to_feather(fname='input/Quandl/sharadar_free.feather')
+            sharadar = sharadar.reset_index().drop('None', axis=1)
+            sharadar.to_feather(fname='input/Quandl/sharadar_free.feather')
         else:
             sharadar = pandas.read_feather(path='input/Quandl/sharadar_free.feather')
             

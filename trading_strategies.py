@@ -678,7 +678,8 @@ def grid_search(price_df, name="",
                                            days_slow=s,
                                            name=name)
             rs_train.excecute(warmup=warmup, end = tr_size)
-            res_train.append({'Name': name, 'Slow': s, 'Fast': f, 'Type': 'Train', **rs_train.performance})
+            res_train.append({'Name': name, 'Slow': s, 'Fast': f,
+                              'Type': 'Train', **rs_train.performance})
 
             # Validation
             rs_val = RS_Trading_Strategy(price_df, equity=equity, heat=heat,
@@ -686,7 +687,8 @@ def grid_search(price_df, name="",
                                          days_slow=s,
                                          name=name)
             rs_val.excecute(warmup=tr_size)
-            res_val.append({'Name': name, 'Slow': s, 'Fast': f, 'Type': 'Validation', **rs_val.performance})
+            res_val.append({'Name': name, 'Slow': s, 'Fast': f,
+                            'Type': 'Validation', **rs_val.performance})
 
 
     if return_df:

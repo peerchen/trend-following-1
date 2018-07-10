@@ -125,7 +125,7 @@ def get_quandl_edi(exchanges = 'XNAS',
     if download:
         for x in exchanges:
             
-            prices = pandas.read_csv(QUANDL_PATH + x + '.csv', names=['Ticker', 'Desc.'])
+            prices = pandas.read_csv(QUANDL_PATH + 'EDI/' + x + '.csv', names=['Ticker', 'Desc.'])
             free_sample = QUANDL_FREE_SAMPLES_EDI[x]
             which_free = [re.search('|'.join(free_sample), t) is not None and
                           re.search('_UADJ', t) is None
@@ -139,7 +139,7 @@ def get_quandl_edi(exchanges = 'XNAS',
             out[x] = {t: saf_quandl_get(t) for t in prices['Ticker']}
             out[x] = {k: i for k, i in out[x].items() if i is not None}
             
-            with open(QUANDL_PATH + x + '.pickle', 'wb') as f:
+            with open(QUANDL_PATH + 'EDI/' + x + '.pickle', 'wb') as f:
                 pickle.dump(out[x], f, pickle.HIGHEST_PROTOCOL)
             
             if verbose:
@@ -148,7 +148,7 @@ def get_quandl_edi(exchanges = 'XNAS',
     else:
         for x in exchanges:
             try:
-                with open(QUANDL_PATH + x + '.pickle', 'rb') as f:
+                with open(QUANDL_PATH + 'EDI/' + x + '.pickle', 'rb') as f:
                     out[x] = pickle.load(f)
             except:
                 pass
@@ -192,17 +192,17 @@ def get_quandl_sharadar(free=True, download=False):
             sharadar = quandl.get_table('SHARADAR/SEP', paginate=True)
             sharadar = sharadar.rename({n: n.title() for n in sharadar.keys().values}, axis=1)
             sharadar = sharadar.reset_index().drop('None', axis=1)
-            sharadar.to_feather(fname='input/Quandl/sharadar_free.feather')
+            sharadar.to_feather(fname=QUANDL_PATH + 'Sharadar/sharadar_free.feather')
         else:
-            sharadar = pandas.read_feather(path='input/Quandl/sharadar_free.feather')
+            sharadar = pandas.read_feather(path=QUANDL_PATH + 'Sharadar/sharadar_free.feather')
             
     else:
         if download:
-            sharadar = pandas.read_csv(filepath_or_buffer='input/Quandl/sharadar_full.csv')
+            sharadar = pandas.read_csv(filepath_or_buffer='input/Quandl/Sharadar/sharadar_full.csv')
             sharadar = sharadar.rename({n: n.title() for n in sharadar.keys().values}, axis=1)
-            sharadar.to_feather(fname='input/Quandl/sharadar_full.feather')
+            sharadar.to_feather(fname=QUANDL_PATH + 'Sharadar/sharadar_full.feather')
         else:
-            sharadar = pandas.read_feather(path='input/Quandl/sharadar_full.feather')
+            sharadar = pandas.read_feather(path=QUANDL_PATH + 'Sharadar/sharadar_full.feather')
     
     tickers = list(set(sharadar.Ticker))
     sharadar.Date = pandas.to_datetime(sharadar.Date)

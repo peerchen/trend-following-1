@@ -1,3 +1,4 @@
+import os
 import itertools
 import pickle
 import numpy
@@ -215,12 +216,32 @@ def get_quandl_sharadar(free=True, download=False):
     return tickers, sharadar
 
 
-def get_price_j(ticker, prices_df):
-    return prices_df.loc[ticker]
+
+def get_sharadar_train():
+    
+    prices = pandas.read_feather(QUANDL_PATH + 'Sharadar/sharadar_train.feather').set_index(['Ticker', 'Date'])
+    dir_train = os.listdir(QUANDL_PATH + 'Sharadar/train/')
+    tickers = [f.replace('.feather', '') for f in dir_train]
+
+    return tickers, prices
 
 
+def get_sharadar_dev():
+    
+    prices = pandas.read_feather(QUANDL_PATH + 'Sharadar/sharadar_dev.feather').set_index(['Ticker', 'Date'])
+    dir_dev = os.listdir(QUANDL_PATH + 'Sharadar/dev/')
+    tickers = [f.replace('.feather', '') for f in dir_dev]
+
+    return tickers, prices
 
 
+def get_sharadar_test():
+    
+    prices = pandas.read_feather(QUANDL_PATH + 'Sharadar/sharadar_test.feather').set_index(['Ticker', 'Date'])
+    dir_test = os.listdir(QUANDL_PATH + 'Sharadar/test/')
+    tickers = [f.replace('.feather', '') for f in dir_test]
+
+    return tickers, prices
 
 
 ## Preparing the data for machine learning...
@@ -236,7 +257,7 @@ def smooth_price(df, N=151, std=20.):
     return df
 
 
-def find_trends(df, N=151, sd=20.):
+def find_trends(df, N=251, sd=20.):
     """
     Finds the trends and the maximum drawdown within trends for a Close price series.
     """

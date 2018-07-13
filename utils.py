@@ -257,7 +257,7 @@ def smooth_price(df, N=151, std=20.):
     return df
 
 
-def find_trends(df, N=251, sd=20.):
+def find_trends(df, N=151, sd=20.):
     """
     Finds the trends and the maximum drawdown within trends for a Close price series.
     """

@@ -246,7 +246,7 @@ def get_sharadar_test():
 
 ## Preparing the data for machine learning...
 
-def smooth_price(df, N=151, std=20.):
+def smooth_price(df, N=1500, std=20.):
     """
     Applies a gaussian filter to the closing price in ohlc data frame.
     """
@@ -257,7 +257,7 @@ def smooth_price(df, N=151, std=20.):
     return df
 
 
-def find_trends(df, N=151, sd=20.):
+def find_trends(df, sd=20., N=1500):
     """
     Finds the trends and the maximum drawdown within trends for a Close price series.
     """
@@ -316,6 +316,14 @@ def find_trends(df, N=151, sd=20.):
     return df
     
     
+def summarise_trends(df, sd=20., N=1500):
+    trends = find_trends(df, sd, N)
+    res = DataFrame(trends.groupby('n_Trend').Trend.count().describe())
+    res = res.transpose().assign(sd=sd, n_days=len(df)).reset_index().drop('index', axis=1)
+    
+    return res
+
+
 def plot_trends(df, tit=''):
     pal = pyplot.get_cmap('Paired').colors
     
@@ -326,7 +334,8 @@ def plot_trends(df, tit=''):
     ax.fill_between(df.index, 0, df.Trend.max(), where= df.Trend < 0, facecolor=pal[4],
                     alpha=0.25, transform=trans, label='Trend down')
     pyplot.plot(df.Close, label='Close')
-    pyplot.plot(df.Close * (1 - df.Max_Drawdown * df.Trend), label='Stop-loss')
+    pyplot.plot(df.Smoothed, label='Smoothed')
+    pyplot.plot(df.Close * (1 - df.Max_Drawdown * df.Trend), label='Stop-loss', alpha = 0.5)
     pyplot.axhline(0, c='grey')
     pyplot.legend()
     pyplot.title(tit)

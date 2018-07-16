@@ -350,10 +350,26 @@ class Trading_Strategy:
     
     
     def plot_state(self):
+#        x = pandas.merge(self.prices_df[['Open', 'High', 'Low', 'Close']],
+#                         self.get_state(), left_index=True, right_index=True, how='outer')
+#        x.plot()
+    
         x = pandas.merge(self.prices_df[['Open', 'High', 'Low', 'Close']],
                          self.get_state(), left_index=True, right_index=True, how='outer')
-        x.plot()
-    
+        tit = self.name + ' State.'
+        pal = pyplot.get_cmap('Paired').colors
+        fig, ax = pyplot.subplots()
+        trans = matplotlib.transforms.blended_transform_factory(ax.transData, ax.transAxes)
+        ax.fill_between(x.index, 0, x.High.max(), where= x.Trend > 0, facecolor=pal[0],
+                        alpha=0.25, transform=trans, label='Trend up')
+        ax.fill_between(x.index, 0, x.High.max(), where= x.Trend < 0, facecolor=pal[4],
+                        alpha=0.25, transform=trans, label='Trend down')
+
+        ax.plot(x)
+        ax.axhline(0, color='grey', lw=2, alpha=0.75)
+        ax.legend()
+        ax.set_title(tit)
+
     
     def plot_equity(self):
         x = pandas.merge(self.get_equity(), self.get_state(), left_index=True, right_index=True, how = 'outer')
@@ -361,7 +377,8 @@ class Trading_Strategy:
         tit += 'heat: ' + str(self.heat) + '.\n'
         tit += 'Initial Equity: ' + str(int(self.equity['Equity'][0]))
         tit += ', Ending Equity: ' + str(int(self.equity['Equity'][-1])) + ', '
-        tit += 'Total Return: ' + str(int(10000 * self.equity['Equity'][-1] / self.equity['Equity'][1] - 1) / 100) + '%.\n'
+        tit += 'Total Return: ' + \
+            str(int(10000 * self.equity['Equity'][-1] / self.equity['Equity'][1] - 1) / 100) + '%.\n'
 #         tit += 'ICAGR: ' + str(int(10000 * self.performance['ICAGR']) / 100) + '%.\n'
 #         tit += 'Volatility: ' + str(int(10000 * self.performance['Volatility']) / 100) + '%, '
         tit += 'Lake Ratio: ' + str(int(10000 * self.performance['Lake_Ratio']) / 100) + '%, '
@@ -653,7 +670,86 @@ class ES1_Trading_Strategy(Trading_Strategy):
     
 
 
+class ES2_Trading_Strategy(Trading_Strategy):
+    """
+    Implements a simple exponential smoothing trading system.
+    """
+    
+    def init_state(self, a=0.1, protective_pct=0.1):
+        """
+        Parameters
+        ----------
+        a: exponential smoothing constant between 0 and 1. S_t = a * P_t + (1 - a) * S_t-1
+        """
 
+        self.state = {'esa': numpy.zeros(len(self.dates)) * numpy.nan,
+                      'Trend': numpy.zeros(len(self.dates)) * numpy.nan}
+        
+        self.a = min(max(a, 0), 1)
+        self.protective_pct = protective_pct
+    
+    
+    def update_state(self, today_i):
+        """
+        Updates the Resistance, Support, and Trend variables.
+        """
+        if today_i == 1:
+            self.state['esa'][0] = self.prices['Close'][0]
+            self.state['Trend'][0] = 0
+        else:        
+            self.state['esa'][today_i - 1] = self.a * self.prices['Close'][today_i - 1] + \
+                (1 - self.a) * self.state['esa'][today_i - 2]
+            self.state['Trend'][today_i - 1] = numpy.sign(self.state['esa'][today_i - 1] - self.state['esa'][today_i - 2])
+    
+    
+    def entry_order_prices(self, today_i):
+        """
+        Computes the entry orders for the day (today).
+        """
+        prev_day_position = self.equity['Position'][today_i - 1]
+        state = {k: self.state[k][today_i - 1] for k in self.state.keys()}
+        
+        if prev_day_position == 0:
+            if state['Trend'] == 1:
+                self.orders['buy_stop'][today_i] = self.prices['High'][today_i - 1]
+            elif state['Trend'] == -1:
+                self.orders['sell_stop'][today_i] = self.prices['Low'][today_i - 1]
+            else:
+                pass
+        else:
+            pass
+    
+    
+    
+    def protective_order_prices(self, today_i):
+        """
+        Computes the protective orders for the day (today) according to a Support and Resistance system.
+        """
+        state = {k: self.state[k][today_i - 1] for k in self.state.keys()}
+        prev_day_position = self.equity['Position'][today_i - 1]
+        
+        if self.orders['buy_stop'][today_i] > 0 or prev_day_position > 0:
+            if numpy.isnan(self.orders['protective_sell'][today_i - 1]):
+                self.orders['protective_sell'][today_i] = \
+                    self.prices['High'][today_i - 1] * (1 - self.protective_pct)
+            else:
+                self.orders['protective_sell'][today_i] = \
+                    max(self.orders['protective_sell'][today_i - 1],
+                        self.prices['High'][today_i - 1] * (1 - self.protective_pct))
+            
+        elif self.orders['sell_stop'][today_i] > 0 or prev_day_position < 0:
+            if numpy.isnan(self.orders['protective_buy'][today_i - 1]):
+                self.orders['protective_buy'][today_i] = \
+                    self.prices['Low'][today_i - 1] * (1 + self.protective_pct)
+            else:
+                self.orders['protective_buy'][today_i] = \
+                    min(self.orders['protective_buy'][today_i - 1],
+                        self.prices['Low'][today_i - 1] * (1 + self.protective_pct))
+        else:
+            pass
+
+        
+        
 
 def grid_search(price_df, name="",
                 min_days=20, max_days=400, step=100, min_dif=50,

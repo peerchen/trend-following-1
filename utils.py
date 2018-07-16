@@ -246,10 +246,11 @@ def get_sharadar_test():
 
 ## Preparing the data for machine learning...
 
-def smooth_price(df, N=1500, std=20.):
+def smooth_price(df, N=10000, std=20.):
     """
     Applies a gaussian filter to the closing price in ohlc data frame.
     """
+    N = max(N, 4 * std)
     f_ga = gaussian(N, std=std)
     f_ga = f_ga / f_ga.sum()
     df = df.assign(Smoothed=filters.convolve1d(df.Close, f_ga))
@@ -257,7 +258,7 @@ def smooth_price(df, N=1500, std=20.):
     return df
 
 
-def find_trends(df, sd=20., N=1500):
+def find_trends(df, sd=20., N=10000):
     """
     Finds the trends and the maximum drawdown within trends for a Close price series.
     """
@@ -269,12 +270,20 @@ def find_trends(df, sd=20., N=1500):
     valleys, _ = find_peaks(-df.Smoothed)
 
     n_changes = min(len(peaks), len(valleys))
-    assert len(set(numpy.sign(peaks[:n_changes] - valleys[:n_changes]))) == 1
-        
-    if valleys.max() > peaks.max(): # Last
-        peaks = numpy.concatenate((peaks, numpy.ones(1, dtype=numpy.int32) * len(df) - 1))
+    if n_changes == 0:
+        if df.Smoothed[-1] > df.Smoothed[0]:
+#             valleys = numpy.zeros(1, dtype=numpy.int32)
+            peaks = numpy.ones(1, dtype=numpy.int32) * len(df) - 1
+        else:
+#             peaks = numpy.zeros(1, dtype=numpy.int32)
+            valleys = numpy.ones(1, dtype=numpy.int32) * len(df) - 1
     else:
-        valleys = numpy.concatenate((valleys, numpy.ones(1, dtype=numpy.int32) * len(df) - 1))
+        if valleys.max() > peaks.max(): # Last
+            peaks = numpy.concatenate((peaks, numpy.ones(1, dtype=numpy.int32) * len(df) - 1))
+        else:
+            valleys = numpy.concatenate((valleys, numpy.ones(1, dtype=numpy.int32) * len(df) - 1))
+        
+    
 
     df.loc[df.index[peaks], 'Trend'] = 1
     df.loc[df.index[valleys], 'Trend'] = -1
@@ -284,7 +293,7 @@ def find_trends(df, sd=20., N=1500):
     # Max drawdown of long position when trending up, short position when trending down.
     breakpoints = numpy.concatenate((numpy.zeros(1, dtype=numpy.int32), peaks + 1, valleys + 1))
     breakpoints.sort()
-
+    
     for b in range(1, len(breakpoints)):
         trend_start = breakpoints[b - 1]
         trend_end = breakpoints[b]
@@ -292,9 +301,13 @@ def find_trends(df, sd=20., N=1500):
         trend_b = res_b.Trend[0]
 
         # Adjust for position (long, short)
-        close_b = res_b.Close[0] * res_b.Close.pct_change()[1:].mul(trend_b).add(1).cumprod()  
+        close_b = res_b.Close[0] * res_b.Close.pct_change().fillna(value=0).mul(trend_b).add(1).cumprod()
         close_b[res_b.index[0]] = res_b.Close[0]
         close_b = close_b.sort_index()
+        
+        print('first:', close_b[0], ', last:', close_b[-1])
+        ratio = close_b[-1] / close_b[0]
+        icagr = numpy.log(ratio) * (364.25 / (close_b.index[-1] - close_b.index[0]).components.days)
 
         peak = close_b[0]
         low = peak
@@ -312,11 +325,13 @@ def find_trends(df, sd=20., N=1500):
 
         df.loc[res_b.index, 'n_Trend'] = int(b)
         df.loc[res_b.index, 'Max_Drawdown'] = -max_drawdown
+        df.loc[res_b.index, 'Ratio'] = ratio
+        df.loc[res_b.index, 'ICAGR'] = icagr
     
     return df
     
     
-def summarise_trends(df, sd=20., N=1500):
+def summarise_trends(df, sd=20., N=10000):
     trends = find_trends(df, sd, N)
     res = DataFrame(trends.groupby('n_Trend').Trend.count().describe())
     res = res.transpose().assign(sd=sd, n_days=len(df)).reset_index().drop('index', axis=1)
@@ -329,10 +344,11 @@ def plot_trends(df, tit=''):
     
     fig, ax = pyplot.subplots(figsize=(16, 5))
     trans = matplotlib.transforms.blended_transform_factory(ax.transData, ax.transAxes)
-    ax.fill_between(df.index, 0, df.Trend.max(), where= df.Trend > 0, facecolor=pal[0],
-                            alpha=0.25, transform=trans, label='Trend up')
-    ax.fill_between(df.index, 0, df.Trend.max(), where= df.Trend < 0, facecolor=pal[4],
-                    alpha=0.25, transform=trans, label='Trend down')
+    if len(set(df.Trend.values)) > 1:
+        ax.fill_between(df.index, 0, df.Trend.max(), where=df.Trend > 0, facecolor=pal[0],
+                        alpha=0.25, transform=trans, label='Trend up')
+        ax.fill_between(df.index, 0, df.Trend.max(), where=df.Trend < 0, facecolor=pal[4],
+                        alpha=0.25, transform=trans, label='Trend down')
     pyplot.plot(df.Close, label='Close')
     pyplot.plot(df.Smoothed, label='Smoothed')
     pyplot.plot(df.Close * (1 - df.Max_Drawdown * df.Trend), label='Stop-loss', alpha = 0.5)

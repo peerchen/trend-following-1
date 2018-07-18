@@ -217,6 +217,13 @@ def get_quandl_sharadar(free=True, download=False):
 
 
 
+def clean_sharadar(prices):
+    prices = prices.query('Volume > 0')
+    
+    return prices
+
+
+
 def get_sharadar_train():
     
     prices = pandas.read_feather(QUANDL_PATH + 'Sharadar/sharadar_train.feather').set_index(['Ticker', 'Date'])
@@ -272,10 +279,8 @@ def find_trends(df, sd=20., N=10000):
     n_changes = min(len(peaks), len(valleys))
     if n_changes == 0:
         if df.Smoothed[-1] > df.Smoothed[0]:
-#             valleys = numpy.zeros(1, dtype=numpy.int32)
             peaks = numpy.ones(1, dtype=numpy.int32) * len(df) - 1
         else:
-#             peaks = numpy.zeros(1, dtype=numpy.int32)
             valleys = numpy.ones(1, dtype=numpy.int32) * len(df) - 1
     else:
         if valleys.max() > peaks.max(): # Last
@@ -301,13 +306,14 @@ def find_trends(df, sd=20., N=10000):
         trend_b = res_b.Trend[0]
 
         # Adjust for position (long, short)
-        close_b = res_b.Close[0] * res_b.Close.pct_change().fillna(value=0).mul(trend_b).add(1).cumprod()
-        close_b[res_b.index[0]] = res_b.Close[0]
+        close_b = res_b.Close[0] + trend_b * (res_b.Close - res_b.Close[0])
         close_b = close_b.sort_index()
         
-        print('first:', close_b[0], ', last:', close_b[-1])
         ratio = close_b[-1] / close_b[0]
-        icagr = numpy.log(ratio) * (364.25 / (close_b.index[-1] - close_b.index[0]).components.days)
+        if len(close_b) > 1:
+            icagr = numpy.log(ratio) * (364.25 / (close_b.index[-1] - close_b.index[0]).components.days)
+        else:
+            icagr = numpy.zeros(1, dtype=numpy.float64)
 
         peak = close_b[0]
         low = peak
@@ -322,19 +328,45 @@ def find_trends(df, sd=20., N=10000):
                 low = close_b[i]
                 drawdown = low / peak - 1
             max_drawdown = min(drawdown, max_drawdown)
+            
+        if max_drawdown != 0:
+            bliss = - icagr / max_drawdown
+        else:
+            bliss = numpy.nan
 
         df.loc[res_b.index, 'n_Trend'] = int(b)
-        df.loc[res_b.index, 'Max_Drawdown'] = -max_drawdown
-        df.loc[res_b.index, 'Ratio'] = ratio
-        df.loc[res_b.index, 'ICAGR'] = icagr
+        df.loc[res_b.index[0], 'Max_Drawdown'] = - max_drawdown
+        df.loc[res_b.index[0], 'Ratio'] = ratio
+        df.loc[res_b.index[0], 'ICAGR'] = icagr
+        df.loc[res_b.index[0], 'Bliss'] = bliss
+        df.loc[res_b.index, 'Trend_Start'] = res_b.index[0]
+        df.loc[res_b.index, 'Trend_End'] = res_b.index[-1]
     
     return df
     
     
 def summarise_trends(df, sd=20., N=10000):
     trends = find_trends(df, sd, N)
+    total_ratio = trends.groupby('n_Trend').first().Ratio.product()
+    total_icagr = numpy.log(total_ratio) * (364.25 / (trends.index[-1] - trends.index[0]).components.days)
+    mean_icagr = trends.groupby('n_Trend').first().ICAGR.mean()
+    neg_icagr = numpy.sum(trends.groupby('n_Trend').first().ICAGR < 0)
+    mean_bliss = trends.groupby('n_Trend').first().Bliss.dropna().mean()
+    max_drawdown = trends.groupby('n_Trend').first().Max_Drawdown.max()
+    if max_drawdown > 0:
+        bliss = total_icagr / max_drawdown
+    else:
+        bliss = numpy.nan
+    
+    neg_freq = neg_icagr.astype(numpy.float64) / trends.n_Trend.max().astype(numpy.float64)
+    
     res = DataFrame(trends.groupby('n_Trend').Trend.count().describe())
     res = res.transpose().assign(sd=sd, n_days=len(df)).reset_index().drop('index', axis=1)
+    res = res.assign(trend_freq=364.25*res['count'].astype(numpy.float64)/res.n_days.astype(numpy.float64))
+    res = res.assign(Ratio=total_ratio,
+                     ICAGR=total_icagr, mean_ICAGR=mean_icagr,
+                     neg_ICAGR=neg_icagr, neg_freq=neg_freq,
+                     Bliss=bliss, mean_Bliss=mean_bliss, Max_Drawdown=max_drawdown)
     
     return res
 

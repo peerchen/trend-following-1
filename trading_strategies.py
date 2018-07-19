@@ -118,11 +118,13 @@ class Trading_Strategy:
             self.orders['protective_buy'][today_i] = \
                 min(self.orders['protective_buy'][today_i - 1], 
                     self.prices['Close'][today_i - 1] * (1 + self.tr_stop_loss))
+        else:
+            pass
         
         # When the trend changes, close positions at market open...
-        elif prev_day_position > 0 and state['Trend'] != 1:
+        if prev_day_position > 0 and state['Trend'] != 1:
             self.orders['protective_sell'][today_i] = self.prices['Open'][today_i]
-        elif prev_day_position < 0 and state['Trend'] != -1:
+        if prev_day_position < 0 and state['Trend'] != -1:
             self.orders['protective_buy'][today_i] = self.prices['Open'][today_i]
         else:
             pass
@@ -469,6 +471,8 @@ class Trading_Strategy:
         ax.plot(x.sell_stop, 'o', label='sell_stop', alpha=0.5, c=pal2[3])
         ax.plot(x.Position.apply('sign') * x.Close.min() / 2,
                 label='Position (+/-)',c=pal2[0], alpha=0.5)
+        ax.plot(self.get_trades_profit().set_index('Entry Date').PL.apply('sign') * x.Close.min() / 2,
+                'o', label='P&L (+/-)', alpha=0.5, c=pal2[6])
         ax.axhline(0, color='grey', lw=2, alpha=0.75)
         ax.legend()
         ax.set_title(tit)

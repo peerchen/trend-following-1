@@ -315,6 +315,10 @@ def find_trends(df, sd=20., N=10000, double=False):
         close_b = res_b.Close[0] + trend_b * (res_b.Close - res_b.Close[0])
         close_b = close_b.sort_index()
         
+        # True range
+        true_range_b = (numpy.max((res_b.High, res_b.Close.shift().fillna(method='bfill')), axis=0) - \
+                        numpy.min((res_b.Low, res_b.Close.shift().fillna(method='bfill')), axis=0)) / res_b.Close
+        
         ratio = close_b[-1] / close_b[0]
         if len(close_b) > 1:
             icagr = numpy.log(ratio) * (364.25 / (close_b.index[-1] - close_b.index[0]).components.days)
@@ -342,6 +346,9 @@ def find_trends(df, sd=20., N=10000, double=False):
 
         df.loc[res_b.index, 'n_Trend'] = int(b)
         df.loc[res_b.index[0], 'Max_Drawdown'] = - max_drawdown
+        df.loc[res_b.index[0], 'ATR'] = true_range_b.mean()
+        df.loc[res_b.index[0], 'max_TR'] = true_range_b.max()
+        df.loc[res_b.index[0], 'min_TR'] = true_range_b.min()
         df.loc[res_b.index[0], 'Ratio'] = ratio
         df.loc[res_b.index[0], 'ICAGR'] = icagr
         df.loc[res_b.index[0], 'Bliss'] = bliss

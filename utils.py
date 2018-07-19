@@ -218,6 +218,9 @@ def get_quandl_sharadar(free=True, download=False):
 
 
 def clean_sharadar(prices):
+    """
+    Assets to check: NXG
+    """
     prices = prices.query('Volume > 0')
     
     return prices
@@ -253,24 +256,27 @@ def get_sharadar_test():
 
 ## Preparing the data for machine learning...
 
-def smooth_price(df, N=10000, std=20.):
+def smooth_price(df, sd=20., N=10000, double=False):
     """
     Applies a gaussian filter to the closing price in ohlc data frame.
     """
-    N = max(N, 4 * std)
-    f_ga = gaussian(N, std=std)
+    N = max(N, 4 * sd)
+    f_ga = gaussian(N, std=sd)
     f_ga = f_ga / f_ga.sum()
-    df = df.assign(Smoothed=filters.convolve1d(df.Close, f_ga))
-    
+    if double:
+        df = df.assign(Smoothed=filters.convolve1d(filters.convolve1d(df.Close, f_ga), f_ga))
+    else:
+        df = df.assign(Smoothed=filters.convolve1d(df.Close, f_ga))
+        
     return df
 
 
-def find_trends(df, sd=20., N=10000):
+def find_trends(df, sd=20., N=10000, double=False):
     """
     Finds the trends and the maximum drawdown within trends for a Close price series.
     """
     # Peaks and valleys of shoothed series
-    df = smooth_price(df, N, sd)
+    df = smooth_price(df, sd, N, double)
     df = df.assign(Trend=numpy.nan, n_Trend=numpy.nan, Max_Drawdown=numpy.nan)
     
     peaks, _ = find_peaks(df.Smoothed)

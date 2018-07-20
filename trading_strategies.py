@@ -1,12 +1,10 @@
-# Not import ... as ...  for parallel computing.
-
 import itertools
-import numpy
-import pandas
+import numpy as np
+import pandas as pd
 from pandas import Series, DataFrame
 from datetime import datetime
-import matplotlib
-from matplotlib import pyplot
+import matplotlib as mpl
+from matplotlib import pyplot as plt
 import matplotlib.transforms
 from utils import *
 
@@ -31,8 +29,8 @@ class Trading_Strategy:
         name: Name of the asset for plotting purposes.
         """
         self.dates = prices.index
-        self.first_trading_day = None
-        self.last_trading_day = None
+        self.first_trading_day = self.dates[1]
+        self.last_trading_day = self.dates[-1]
         self.prices_df = prices
         self.prices = {s: prices[s].values for s in list(prices.keys())}
         self.heat = heat
@@ -41,19 +39,19 @@ class Trading_Strategy:
         self.name = name
         self.today_prices = None
         
-        self.equity = {'Available_Balance': numpy.ones(len(self.dates)) * equity,
-                       'Closing_Balance': numpy.ones(len(self.dates)) * equity,
-                       'Position': numpy.zeros(len(self.dates)),
-                       'Open_Profit': numpy.zeros(len(self.dates)),
-                       'Position_Value': numpy.zeros(len(self.dates)),
-                       'Equity': numpy.ones(len(self.dates)) * equity}
+        self.equity = {'Available_Balance': np.ones(len(self.dates)) * equity,
+                       'Closing_Balance': np.ones(len(self.dates)) * equity,
+                       'Position': np.zeros(len(self.dates)),
+                       'Open_Profit': np.zeros(len(self.dates)),
+                       'Position_Value': np.zeros(len(self.dates)),
+                       'Equity': np.ones(len(self.dates)) * equity}
         
-        self.orders = {'buy_stop': numpy.zeros(len(self.dates)) * numpy.nan,
-                       'sell_stop': numpy.zeros(len(self.dates)) * numpy.nan,
-                       'protective_buy': numpy.zeros(len(self.dates)) * numpy.nan,
-                       'protective_sell': numpy.zeros(len(self.dates)) * numpy.nan,
-                       'risk_per_lot': numpy.zeros(len(self.dates)) * numpy.nan,
-                       'amount': numpy.zeros(len(self.dates)) * numpy.nan}
+        self.orders = {'buy_stop': np.zeros(len(self.dates)) * np.nan,
+                       'sell_stop': np.zeros(len(self.dates)) * np.nan,
+                       'protective_buy': np.zeros(len(self.dates)) * np.nan,
+                       'protective_sell': np.zeros(len(self.dates)) * np.nan,
+                       'risk_per_lot': np.zeros(len(self.dates)) * np.nan,
+                       'amount': np.zeros(len(self.dates)) * np.nan}
         
         self.trades = []
         self.max_drawdown = 0
@@ -140,14 +138,14 @@ class Trading_Strategy:
             self.orders['risk_per_lot'][today_i] = self.orders['buy_stop'][today_i] - \
                 self.orders['protective_sell'][today_i] + 1e-12
             self.orders['amount'][today_i] = self.position_step * \
-                    numpy.round((1e-8 + equity_to_risk / self.orders['risk_per_lot'][today_i]) / \
+                    np.round((1e-8 + equity_to_risk / self.orders['risk_per_lot'][today_i]) / \
                                 self.position_step)
         
         elif self.orders['sell_stop'][today_i] > 0 and self.orders['protective_buy'][today_i] > 0:
             self.orders['risk_per_lot'][today_i] = self.orders['protective_buy'][today_i] - \
                 self.orders['sell_stop'][today_i] + 1e-12
             self.orders['amount'][today_i] = - self.position_step * \
-                numpy.round((1e-8 + equity_to_risk / self.orders['risk_per_lot'][today_i]) / \
+                np.round((1e-8 + equity_to_risk / self.orders['risk_per_lot'][today_i]) / \
                             self.position_step)
         else:
             pass
@@ -163,58 +161,64 @@ class Trading_Strategy:
         o = {k: self.orders[k][today_i] for k in self.orders.keys()}  # orders for the day
         tp = self.today_prices
 
-        if position == 0:  # Enter the market.
+        if self.dates[today_i] < self.last_trading_day:
+            if position == 0:  # Enter the market.
 
-            if not numpy.isnan(o['buy_stop']) and not numpy.isnan(o['protective_sell']) and \
-                o['buy_stop'] > o['protective_sell'] and tp['High'] > o['buy_stop']:
-                
-                buy_price = tp['High'] - skid * (tp['High'] - max(tp['Open'], tp['Low'], o['buy_stop']))
-                trade = {'Date': self.dates[today_i],
-                         'Price': buy_price,
-                         'Amount': min(o['amount'], balance)}
-                position += o['amount']
-                balance -= o['amount'] * buy_price
-                self.trades.append(trade)
+                if not np.isnan(o['buy_stop']) and not np.isnan(o['protective_sell']) and \
+                    o['buy_stop'] > o['protective_sell'] and tp['High'] > o['buy_stop']:
+
+                    buy_price = tp['High'] - \
+                        skid * (tp['High'] - max(tp['Open'], tp['Low'], o['buy_stop']))
+                    trade = {'Date': self.dates[today_i],
+                             'Price': buy_price,
+                             'Amount': min(o['amount'], balance)}
+                    position += o['amount']
+                    balance -= o['amount'] * buy_price
+                    self.trades.append(trade)
 
 
-            elif not numpy.isnan(o['sell_stop']) and not numpy.isnan(o['protective_buy']) and \
-                o['sell_stop'] < o['protective_buy'] and tp['Low'] < o['sell_stop']:
-                
-                sell_price = tp['Low'] + skid * (min(tp['Open'], tp['High'], o['sell_stop']) - tp['Low'])
-                trade = {'Date': self.dates[today_i],
-                         'Price': sell_price,
-                         'Amount': max(o['amount'], -balance)}  # o['amount'] < 0
-                position += o['amount']
-                balance -= o['amount'] * sell_price
-                self.trades.append(trade)
+                elif not np.isnan(o['sell_stop']) and not \
+                    np.isnan(o['protective_buy']) and \
+                    o['sell_stop'] < o['protective_buy'] and \
+                    tp['Low'] < o['sell_stop']:
 
-        if position != 0:  # Close positions.
+                    sell_price = tp['Low'] + \
+                        skid * (min(tp['Open'], tp['High'], o['sell_stop']) - tp['Low'])
+                    trade = {'Date': self.dates[today_i],
+                             'Price': sell_price,
+                             'Amount': max(o['amount'], -balance)}  # o['amount'] < 0
+                    position += o['amount']
+                    balance -= o['amount'] * sell_price
+                    self.trades.append(trade)
 
-            if not numpy.isnan(o['protective_buy']) and tp['High'] > o['protective_buy']:
-                
-                buy_price = tp['High'] - \
-                    skid * (tp['High'] - max(tp['Open'], tp['Low'], o['protective_buy']))
-                amount = max(-position, 0)
-                trade = {'Date': self.dates[today_i],
-                         'Price': buy_price,
-                         'Amount': amount}
-                position += amount
-                balance -= amount * buy_price
-                self.trades.append(trade)
+            if position != 0:  # Close positions.
 
-            if not numpy.isnan(o['protective_sell']) and tp['Low'] < o['protective_sell']:
-                
-                sell_price = tp['Low'] + \
-                    skid * (min(tp['Open'], tp['High'], o['protective_sell']) - tp['Low'])
-                amount = min(-position, 0)
-                trade = {'Date': self.dates[today_i],
-                         'Price': sell_price,
-                         'Amount': amount}
-                position += amount
-                balance -= amount * sell_price
-                self.trades.append(trade)
+                if not np.isnan(o['protective_buy']) and \
+                    tp['High'] > o['protective_buy']:
 
-        if self.dates[today_i] == self.dates[-1] and position != 0:  # Last day
+                    buy_price = tp['High'] - \
+                        skid * (tp['High'] - max(tp['Open'], tp['Low'], o['protective_buy']))
+                    amount = max(-position, 0)
+                    trade = {'Date': self.dates[today_i],
+                             'Price': buy_price,
+                             'Amount': amount}
+                    position += amount
+                    balance -= amount * buy_price
+                    self.trades.append(trade)
+
+                if not np.isnan(o['protective_sell']) and tp['Low'] < o['protective_sell']:
+
+                    sell_price = tp['Low'] + \
+                        skid * (min(tp['Open'], tp['High'], o['protective_sell']) - tp['Low'])
+                    amount = min(-position, 0)
+                    trade = {'Date': self.dates[today_i],
+                             'Price': sell_price,
+                             'Amount': amount}
+                    position += amount
+                    balance -= amount * sell_price
+                    self.trades.append(trade)
+
+        elif self.dates[today_i] == self.last_trading_day and position != 0:  # Last day
             
             if position > 0:
                 
@@ -277,21 +281,20 @@ class Trading_Strategy:
         max_drawdown = 0
         
         if end is None:
-            end = self.dates[-1]
+            pass
         elif type(end) == float:
-            end = self.dates[int(len(self.dates) * end)]
+            self.last_trading_day = self.dates[int(len(self.dates) * end)]
         
         
         if warmup < 1:
             warmup = int(len(self.dates) * warmup)
             
         self.first_trading_day = self.dates[warmup]
-        self.last_trading_day = end
         
         for i in range(1, len(self.dates)):
             self.today_prices = {k: self.prices[k][i] for k in self.prices.keys()}
             self.update_state(i)
-            if i >= warmup:
+            if i >= warmup and self.dates[i] <= self.last_trading_day:
                 self.orders_before_trading_starts(i)
                 self.excecute_orders(i, skid)
                 
@@ -304,13 +307,20 @@ class Trading_Strategy:
                     drawdown = low / peak - 1
                 max_drawdown = min(drawdown, max_drawdown)
                 
-            if self.dates[i] > end:
-                self.equity['Available_Balance'][i] = self.equity['Available_Balance'][i - 1]
-                self.equity['Closing_Balance'][i] = self.equity['Closing_Balance'][i - 1]
+                if self.equity['Equity'][i] < 0:
+                    self.last_trading_day = self.dates[i]
+                    self.excecute_orders(i, skid)
+                
+            if self.dates[i] > self.last_trading_day:
+                self.equity['Available_Balance'][i] = \
+                    self.equity['Available_Balance'][i - 1]
+                self.equity['Closing_Balance'][i] = \
+                    self.equity['Closing_Balance'][i - 1]
                 self.equity['Position'][i] = self.equity['Position'][i - 1]
                 self.equity['Open_Profit'][i] =  self.equity['Position'][i] * \
                     (self.prices['Close'][i] - self.trades[-1]['Price'])
-                self.equity['Position_Value'][i] = self.equity['Position'][i] * self.prices['Close'][i]
+                self.equity['Position_Value'][i] = self.equity['Position'][i] * \
+                    self.prices['Close'][i]
                 self.equity['Equity'][i] = self.equity['Equity'][i - 1]
         
         self.max_drawdown = max_drawdown
@@ -325,23 +335,24 @@ class Trading_Strategy:
         self.performance['Years'] = (self.last_trading_day - self.first_trading_day).days / 364.25
         self.performance['Ratio'] = self.equity['Equity'][-1] / self.equity['Equity'][0]
         # Instantaneously Compounding Annual Gain
-        self.performance['ICAGR'] = numpy.log(self.performance['Ratio']) / self.performance['Years']
+        self.performance['ICAGR'] = \
+            np.log(np.clip(self.performance['Ratio'], 0, None)) / self.performance['Years']
         self.performance['Max_Drawdown'] = -self.max_drawdown
         # How Often the System Earns Back its Biggest Drawdown
         self.performance['Bliss'] = self.performance['ICAGR'] / self.performance['Max_Drawdown']
         
         eqty = self.equity['Equity'][self.dates > self.first_trading_day]
-        self.performance['Volatility'] = numpy.std(numpy.log(eqty[1:] / eqty[:-1])) * numpy.sqrt(364.25)
+#         self.performance['Volatility'] = np.std(np.log(eqty[1:] / eqty[:-1])) * np.sqrt(364.25)
         
         # Lake Ratio (see http://www.seykota.com/tribe/risk/index.htm)
         lake_bottom = Series(eqty) / self.equity['Equity'][1]
         lake_surface = lake_bottom.cummax()
 
-        earth = numpy.trapz(lake_bottom.values)
-        water = numpy.trapz(lake_surface - lake_bottom)
+        earth = np.trapz(lake_bottom.values)
+        water = np.trapz(lake_surface - lake_bottom)
         self.performance['Lake_Ratio'] = water / earth
         
-        earth0 = numpy.trapz(lake_bottom.values - 1)
+        earth0 = np.trapz(lake_bottom.values - 1)
         self.performance['Sea_Ratio'] = water / earth0
     
     
@@ -378,13 +389,13 @@ class Trading_Strategy:
         if not any([i == 'trades_profit' for i in dir(self)]):
             tr = self.get_trades().reset_index()
 
-            entries = tr.iloc[numpy.arange(0, len(tr), 2)]
+            entries = tr.iloc[np.arange(0, len(tr), 2)]
             entries = entries.reset_index().rename(columns={'index': 'transaction'})
-            exits = tr.iloc[numpy.arange(1, len(tr) + 1, 2)]
+            exits = tr.iloc[np.arange(1, len(tr), 2)]
             exits = exits.reset_index().rename(columns={'index': 'transaction'})
             exits = exits.drop('Amount', axis=1)
 
-            tr_pr = pandas.concat((entries.rename(columns={t: 'Entry ' + t for t in ['Date', 'Price']}),
+            tr_pr = pd.concat((entries.rename(columns={t: 'Entry ' + t for t in ['Date', 'Price']}),
                                    exits.rename(columns={t: 'Exit ' + t for t in ['Date', 'Price']})),
                                    axis=1)
             tr_pr = tr_pr.assign(PL=tr_pr.Amount * \
@@ -397,7 +408,7 @@ class Trading_Strategy:
     
     
     def plot_prices(self):
-        fig, ax = pyplot.subplots()
+        fig, ax = plt.subplots()
         ax.plot(self.prices_df.Open)
         ax.plot(self.prices_df.High)
         ax.plot(self.prices_df.Low)
@@ -408,12 +419,12 @@ class Trading_Strategy:
     
     
     def plot_state(self):
-        x = pandas.merge(self.prices_df[['Open', 'High', 'Low', 'Close']],
+        x = pd.merge(self.prices_df[['Open', 'High', 'Low', 'Close']],
                          self.get_state(), left_index=True, right_index=True, how='outer')
         tit = self.name + ' State.'
-        pal = pyplot.get_cmap('Paired').colors
-        fig, ax = pyplot.subplots()
-        trans = matplotlib.transforms.blended_transform_factory(ax.transData, ax.transAxes)
+        pal = plt.get_cmap('Paired').colors
+        fig, ax = plt.subplots()
+        trans = mpl.transforms.blended_transform_factory(ax.transData, ax.transAxes)
         ax.fill_between(x.index, 0, x.High.max(), where= x.Trend > 0, facecolor=pal[0],
                         alpha=0.25, transform=trans, label='Trend up')
         ax.fill_between(x.index, 0, x.High.max(), where= x.Trend < 0, facecolor=pal[4],
@@ -431,7 +442,7 @@ class Trading_Strategy:
                          'Short': tr_pr.query('Amount < 0').PL_pct})
         aux.plot.hist(stacked=True, alpha=0.5, bins=40)
 
-        pyplot.grid(c='grey', alpha=0.5)
+        plt.grid(c='grey', alpha=0.5)
         pct_long = (tr_pr.Amount > 0).mean()
         pct_profitable = (tr_pr.PL > 0).mean()
         pr_long = tr_pr.query('Amount > 0').PL.sum()
@@ -443,22 +454,22 @@ class Trading_Strategy:
         tit += 'Profit Long: ' + str(int(100 * pr_long) / 100) 
         tit += ', profit short: ' + str(int(100 * pr_short) / 100)
         tit += ', total: ' + str(int(100 * pr) / 100)
-        pyplot.title(tit)
-        pyplot.xlabel('P&L (%)')
-        pyplot.show()
+        plt.title(tit)
+        plt.xlabel('P&L (%)')
+        plt.show()
         
     def plot_orders(self):
-        x = pandas.merge(self.prices_df[['Open', 'High', 'Low', 'Close']],
+        x = pd.merge(self.prices_df[['Open', 'High', 'Low', 'Close']],
                          self.get_orders(), left_index=True, right_index=True, how='outer')
-        x = pandas.merge(x, self.get_state(),
+        x = pd.merge(x, self.get_state(),
                          left_index=True, right_index=True, how = 'outer')
-        x = pandas.merge(x, self.get_equity(),
+        x = pd.merge(x, self.get_equity(),
                          left_index=True, right_index=True, how = 'outer')
         tit = self.name + ' - Orders.'
-        pal = pyplot.get_cmap('Paired').colors
-        pal2 = pyplot.get_cmap('Set1').colors
-        fig, ax = pyplot.subplots()
-        trans = matplotlib.transforms.blended_transform_factory(ax.transData, ax.transAxes)
+        pal = plt.get_cmap('Paired').colors
+        pal2 = plt.get_cmap('Set1').colors
+        fig, ax = plt.subplots()
+        trans = mpl.transforms.blended_transform_factory(ax.transData, ax.transAxes)
         ax.fill_between(x.index, 0, x.High.max(), where= x.Trend > 0, facecolor=pal[0],
                         alpha=0.25, transform=trans, label='Trend up')
         ax.fill_between(x.index, 0, x.High.max(), where= x.Trend < 0, facecolor=pal[4],
@@ -479,22 +490,22 @@ class Trading_Strategy:
     
     
     def plot_equity(self):
-        x = pandas.merge(self.get_equity(), self.get_state(),
+        x = pd.merge(self.get_equity(), self.get_state(),
                          left_index=True, right_index=True, how = 'outer')
         tit = self.name + ', '
         tit += 'heat: ' + str(self.heat) + '.\n'
         tit += 'Initial Equity: ' + str(int(self.equity['Equity'][0]))
         tit += ', Ending Equity: ' + str(int(self.equity['Equity'][-1])) + ', '
         tit += 'Total Return: '
-        tit += str(int(10000 * self.equity['Equity'][-1] / self.equity['Equity'][1] - 1) / 100) + '%.\n'
-#         tit += 'ICAGR: ' + str(int(10000 * self.performance['ICAGR']) / 100) + '%.\n'
+        tit += str(int(10000 * self.equity['Equity'][-1] / self.equity['Equity'][1] - 1) / 100) + '%, '
+        tit += 'ICAGR: ' + str(np.round(self.performance['ICAGR'], 2) * 100) + '%.\n'
 #         tit += 'Volatility: ' + str(int(10000 * self.performance['Volatility']) / 100) + '%, '
         tit += 'Lake Ratio: ' + str(int(10000 * self.performance['Lake_Ratio']) / 100) + '%, '
         tit += 'Max. Drawdown: ' + str(int(10000* self.performance['Max_Drawdown']) / 100) + '%, '
-#         tit += 'Bliss: ' + str(numpy.round(364.25 * self.performance['Bliss'], 1)) + ' days.'
-        pal = pyplot.get_cmap('Paired').colors
-        fig, ax = pyplot.subplots()
-        trans = matplotlib.transforms.blended_transform_factory(ax.transData, ax.transAxes)
+        tit += 'Bliss: ' + str(np.round(364.25 * self.performance['Bliss'], 1)) + ' days.'
+        pal = plt.get_cmap('Paired').colors
+        fig, ax = plt.subplots()
+        trans = mpl.transforms.blended_transform_factory(ax.transData, ax.transAxes)
         ax.fill_between(x.index, 0, x.Equity.max(), where= x.Trend > 0, facecolor=pal[0],
                         alpha=0.25, transform=trans, label='Trend up')
         ax.fill_between(x.index, 0, x.Equity.max(), where= x.Trend < 0, facecolor=pal[4],
@@ -512,9 +523,10 @@ class Trading_Strategy:
         See http://www.seykota.com/tribe/risk/index.htm
         """
         eqty = self.equity['Equity'][self.dates > self.first_trading_day]
-        lake_bottom = Series(eqty) / self.equity['Equity'][1]
+        lake_bottom = Series(eqty, index=self.dates[self.dates > self.first_trading_day]) / \
+        self.equity['Equity'][1]
         lake_surface = lake_bottom.cummax()
-        fig, ax = pyplot.subplots()
+        fig, ax = plt.subplots()
         ax.fill_between(lake_bottom.index, y1 = lake_bottom, y2 = lake_surface, alpha=0.5)
         ax.fill_between(lake_bottom.index, y1 = 0, y2 = lake_bottom, alpha=0.5)
         ax.axhline(1, color='grey', lw=2, alpha=0.75)
@@ -547,11 +559,11 @@ class RS_Trading_Strategy(Trading_Strategy):
         days_slow: days in the moving window for computing the slow support and resistance.
         """
 
-        self.state = {'Support_slow': numpy.zeros(len(self.dates)) * numpy.nan,
-                      'Support_fast': numpy.zeros(len(self.dates)) * numpy.nan,
-                      'Resistance_slow': numpy.zeros(len(self.dates)) * numpy.nan,
-                      'Resistance_fast': numpy.zeros(len(self.dates)) * numpy.nan,
-                      'Trend':  numpy.zeros(len(self.dates))}
+        self.state = {'Support_slow': np.zeros(len(self.dates)) * np.nan,
+                      'Support_fast': np.zeros(len(self.dates)) * np.nan,
+                      'Resistance_slow': np.zeros(len(self.dates)) * np.nan,
+                      'Resistance_fast': np.zeros(len(self.dates)) * np.nan,
+                      'Trend':  np.zeros(len(self.dates))}
         
         self.days_fast = days_fast
         self.days_slow = days_slow
@@ -621,13 +633,13 @@ class RS_Trading_Strategy(Trading_Strategy):
     
         
     def plot_state(self):
-        x = pandas.merge(self.prices_df, self.get_state(),
+        x = pd.merge(self.prices_df, self.get_state(),
                          left_index=True, right_index=True, how='outer')
         tit = self.name + ' - days_fast: ' + str(self.days_fast) 
         tit += ', days_slow: ' + str(self.days_slow) + '.'
-        pal = pyplot.get_cmap('Paired').colors
-        fig, ax = pyplot.subplots()
-        trans = matplotlib.transforms.blended_transform_factory(ax.transData, ax.transAxes)
+        pal = plt.get_cmap('Paired').colors
+        fig, ax = plt.subplots()
+        trans = mpl.transforms.blended_transform_factory(ax.transData, ax.transAxes)
         ax.fill_between(x.index, 0, x.High.max(), where= x.Trend > 0, facecolor=pal[0],
                         alpha=0.25, transform=trans, label='Trend up')
         ax.fill_between(x.index, 0, x.High.max(), where= x.Trend < 0, facecolor=pal[4],
@@ -645,7 +657,7 @@ class RS_Trading_Strategy(Trading_Strategy):
     
     
     def plot_equity(self):
-        x = pandas.merge(self.get_equity(), self.get_state(),
+        x = pd.merge(self.get_equity(), self.get_state(),
                          left_index=True, right_index=True, how = 'outer')
         tit = self.name + ' - days_fast: ' + str(self.days_fast) 
         tit += ', days_slow: ' + str(self.days_slow) + ', '
@@ -658,10 +670,10 @@ class RS_Trading_Strategy(Trading_Strategy):
         tit += 'Volatility: ' + str(int(10000 * self.performance['Volatility']) / 100) + '%, '
         tit += 'Lake Ratio: ' + str(int(10000 * self.performance['Lake_Ratio']) / 100) + '%, '
         tit += 'Max. Drawdown: ' + str(int(10000* self.performance['Max_Drawdown']) / 100) + '%, '
-        tit += 'Bliss: ' + str(numpy.round(364.25 * self.performance['Bliss'], 1)) + ' days.'
-        pal = pyplot.get_cmap('Paired').colors
-        fig, ax = pyplot.subplots()
-        trans = matplotlib.transforms.blended_transform_factory(ax.transData, ax.transAxes)
+        tit += 'Bliss: ' + str(np.round(364.25 * self.performance['Bliss'], 1)) + ' days.'
+        pal = plt.get_cmap('Paired').colors
+        fig, ax = plt.subplots()
+        trans = mpl.transforms.blended_transform_factory(ax.transData, ax.transAxes)
         ax.fill_between(x.index, 0, x.Equity.max(), where= x.Trend > 0, facecolor=pal[0],
                         alpha=0.25, transform=trans, label='Trend up')
         ax.fill_between(x.index, 0, x.Equity.max(), where= x.Trend < 0, facecolor=pal[4],
@@ -679,7 +691,7 @@ def test_RS_Trading_Strategy():
     Make sure the results match those on http://www.seykota.com/tribe/TSP/SR/index.htm..
     """
 
-    price = pandas.read_csv(filepath_or_buffer='test/Seykota GC----C.csv', header=None,
+    price = pd.read_csv(filepath_or_buffer='test/Seykota GC----C.csv', header=None,
                names=['Date', 'Open', 'High', 'Low', 'Close', 'Volume', 'Open_Interest'], 
                index_col=0)
 
@@ -692,29 +704,29 @@ def test_RS_Trading_Strategy():
 
     # test states
     stts = rs_tr.get_state()
-    metrics = pandas.merge(price[['Open', 'High', 'Low', 'Close']],
+    metrics = pd.merge(price[['Open', 'High', 'Low', 'Close']],
                            stts, left_index=True, right_index=True)
-    metrics_log = pandas.read_excel(io='test/Metrics_Log_1-1.xlsx', index_col=0)
-    assert numpy.all(numpy.equal(metrics_log.values, metrics.values))
+    metrics_log = pd.read_excel(io='test/Metrics_Log_1-1.xlsx', index_col=0)
+    assert np.all(np.equal(metrics_log.values, metrics.values))
 
     # test trades
     trds = rs_tr.get_trades()
-    trade_log = pandas.read_excel(io='test/Trade_Log.xlsx')
+    trade_log = pd.read_excel(io='test/Trade_Log.xlsx')
     trade_log = trade_log.set_index('Date').sort_index()[['Price', 'Amount']]
     assert max(abs(trds.Price.values - trade_log.Price.values)) < 1e-3
     assert trds.Amount.equals(trade_log.Amount.astype('float64'))
 
     # test equity
     eqty = rs_tr.get_equity()
-    equity_log = pandas.read_excel(io='test/Equity_Log.xlsx', index_col=0)
+    equity_log = pd.read_excel(io='test/Equity_Log.xlsx', index_col=0)
     assert max(abs(eqty.Equity.values - equity_log.Equity.values)) < 1e-3
-    assert numpy.max(numpy.abs(equity_log.Clo_Bal - rs_tr.get_equity().Closing_Balance)) < 1e-3
-    assert numpy.max(numpy.abs(equity_log.Open_Profit - rs_tr.get_equity().Open_Profit)) < 1e-3
+    assert np.max(np.abs(equity_log.Clo_Bal - rs_tr.get_equity().Closing_Balance)) < 1e-3
+    assert np.max(np.abs(equity_log.Open_Profit - rs_tr.get_equity().Open_Profit)) < 1e-3
 
     # test performance indicators
-    assert numpy.round(rs_tr.performance['ICAGR'], 4) == 0.0309
-    assert numpy.round(rs_tr.performance['Max_Drawdown'], 4) == 0.4077
-    assert numpy.round(rs_tr.performance['Bliss'], 4) == 0.0758
+    assert np.round(rs_tr.performance['ICAGR'], 4) == 0.0309
+    assert np.round(rs_tr.performance['Max_Drawdown'], 4) == 0.4077
+    assert np.round(rs_tr.performance['Bliss'], 4) == 0.0758
 
 
 
@@ -724,7 +736,7 @@ class Oracle_Trading_Strategy(Trading_Strategy):
     Implements a trading system that cheats (!!!).
     """
     
-    def init_state(self, trend, max_dd):
+    def init_state(self, trend, max_dd, min_max_dd=0.05, max_max_dd=0.5):
         """
         Parameters
         ----------
@@ -732,7 +744,7 @@ class Oracle_Trading_Strategy(Trading_Strategy):
         """
 
         self.state = {'Trend': trend}
-        self.stop_loss = max_dd
+        self.stop_loss = np.clip(max_dd, min_max_dd, max_max_dd)
     
     
     def update_state(self, today_i):
@@ -792,8 +804,8 @@ class ES1_Trading_Strategy(Trading_Strategy):
         a: exponential smoothing constant between 0 and 1. S_t = a * P_t + (1 - a) * S_t-1
         """
 
-        self.state = {'esa': numpy.zeros(len(self.dates)) * numpy.nan,
-                      'Trend': numpy.zeros(len(self.dates)) * numpy.nan}
+        self.state = {'esa': np.zeros(len(self.dates)) * np.nan,
+                      'Trend': np.zeros(len(self.dates)) * np.nan}
         
         self.a = min(max(a, 0), 1)
         
@@ -809,7 +821,7 @@ class ES1_Trading_Strategy(Trading_Strategy):
         else:        
             self.state['esa'][today_i - 1] = self.a * self.prices['Close'][today_i - 1] + \
                 (1 - self.a) * self.state['esa'][today_i - 2]
-            self.state['Trend'][today_i - 1] = numpy.sign(self.prices['Close'][today_i - 1] - \
+            self.state['Trend'][today_i - 1] = np.sign(self.prices['Close'][today_i - 1] - \
                                                           self.state['esa'][today_i - 1])
     
     
@@ -862,8 +874,8 @@ class ES2_Trading_Strategy(Trading_Strategy):
         a: exponential smoothing constant between 0 and 1. S_t = a * P_t + (1 - a) * S_t-1
         """
 
-        self.state = {'esa': numpy.zeros(len(self.dates)) * numpy.nan,
-                      'Trend': numpy.zeros(len(self.dates)) * numpy.nan}
+        self.state = {'esa': np.zeros(len(self.dates)) * np.nan,
+                      'Trend': np.zeros(len(self.dates)) * np.nan}
         
         self.a = min(max(a, 0), 1)
     
@@ -878,7 +890,7 @@ class ES2_Trading_Strategy(Trading_Strategy):
         else:        
             self.state['esa'][today_i - 1] = self.a * self.prices['Close'][today_i - 1] + \
                 (1 - self.a) * self.state['esa'][today_i - 2]
-            self.state['Trend'][today_i - 1] = numpy.sign(self.state['esa'][today_i - 1] - \
+            self.state['Trend'][today_i - 1] = np.sign(self.state['esa'][today_i - 1] - \
                                                           self.state['esa'][today_i - 2])
     
     
@@ -908,8 +920,8 @@ def grid_search(price_df, name="",
                 warmup=None, tr_size=0.5, heat=0.05, equity=1e6,
                 return_df=True):
     
-    slow = numpy.arange(min_days, max_days, step)
-    fast = numpy.arange(min_days, max_days, step)
+    slow = np.arange(min_days, max_days, step)
+    fast = np.arange(min_days, max_days, step)
 
     res_train = []
     res_val = []
@@ -942,7 +954,7 @@ def grid_search(price_df, name="",
     if return_df:
         res_train = dict_list_to_DataFrame(res_train)
         res_val = dict_list_to_DataFrame(res_val)
-        out = pandas.concat([res_train, res_val])
+        out = pd.concat([res_train, res_val])
         return out
     else:
         return res_train, res_val

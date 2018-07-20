@@ -1,12 +1,12 @@
 import os
 import itertools
-import pickle
-import numpy
-import pandas
+import dill as pickle
+import numpy as np
+import pandas as pd
 from pandas import Series, DataFrame
 from datetime import datetime
-import matplotlib
-from matplotlib import pyplot
+import matplotlib as mpl
+from matplotlib import pyplot as plt
 import matplotlib.transforms
 import quandl
 
@@ -18,11 +18,11 @@ from scipy.ndimage import filters
 # Utils
 def dict_list_to_DataFrame(dl): 
     dl = [{k: [i] for k, i in d.items()} for d in dl]
-    out = pandas.concat([DataFrame.from_dict(d) for d in dl], sort=False)
+    out = pd.concat([DataFrame.from_dict(d) for d in dl], sort=False)
     return out
 
 def plot_prices(prices, name=''):
-    fig, ax = pyplot.subplots()
+    fig, ax = plt.subplots()
     ax.plot(prices.Open)
     ax.plot(prices.High)
     ax.plot(prices.Low)
@@ -93,7 +93,7 @@ QUANDL_FREE_SAMPLES_EDI = {
              '13450', '13480', '13760']
 }
 
-# xjpx_df = DataFrame(data = numpy.arange(len(QUANDL_FREE_SAMPLES_EDI['XJPX'])),
+# xjpx_df = DataFrame(data = np.arange(len(QUANDL_FREE_SAMPLES_EDI['XJPX'])),
 #                     index=['XJPX/' + i for i in QUANDL_FREE_SAMPLES_EDI['XJPX']])
 # xjpx_df.to_csv(path_or_buf='Input/Quandl/XJPX.csv', header=False)
 
@@ -130,7 +130,8 @@ def get_quandl_edi(exchanges = 'XNAS',
     if download:
         for x in exchanges:
             
-            prices = pandas.read_csv(QUANDL_PATH + 'EDI/' + x + '.csv', names=['Ticker', 'Desc.'])
+            prices = pd.read_csv(QUANDL_PATH + 'EDI/' + x + '.csv',
+                                 names=['Ticker', 'Desc.'])
             free_sample = QUANDL_FREE_SAMPLES_EDI[x]
             which_free = [re.search('|'.join(free_sample), t) is not None and
                           re.search('_UADJ', t) is None
@@ -169,7 +170,7 @@ def get_quandl_edi(exchanges = 'XNAS',
             return price.reset_index().set_index(['Ticker', 'Date'])
         
         tickers = list(out.keys())
-        out = pandas.concat([add_ticker(out[t], t) for t in tickers])
+        out = pd.concat([add_ticker(out[t], t) for t in tickers])
         
         return tickers, out
     else:
@@ -199,18 +200,18 @@ def get_quandl_sharadar(free=True, download=False):
             sharadar = sharadar.reset_index().drop('None', axis=1)
             sharadar.to_feather(fname=QUANDL_PATH + 'Sharadar/sharadar_free.feather')
         else:
-            sharadar = pandas.read_feather(path=QUANDL_PATH + 'Sharadar/sharadar_free.feather')
+            sharadar = pd.read_feather(path=QUANDL_PATH + 'Sharadar/sharadar_free.feather')
             
     else:
         if download:
-            sharadar = pandas.read_csv(filepath_or_buffer='input/Quandl/Sharadar/sharadar_full.csv')
+            sharadar = pd.read_csv(filepath_or_buffer='input/Quandl/Sharadar/sharadar_full.csv')
             sharadar = sharadar.rename({n: n.title() for n in sharadar.keys().values}, axis=1)
             sharadar.to_feather(fname=QUANDL_PATH + 'Sharadar/sharadar_full.feather')
         else:
-            sharadar = pandas.read_feather(path=QUANDL_PATH + 'Sharadar/sharadar_full.feather')
+            sharadar = pd.read_feather(path=QUANDL_PATH + 'Sharadar/sharadar_full.feather')
     
     tickers = list(set(sharadar.Ticker))
-    sharadar.Date = pandas.to_datetime(sharadar.Date)
+    sharadar.Date = pd.to_datetime(sharadar.Date)
     sharadar = sharadar.set_index(['Ticker', 'Date'])
     
     return tickers, sharadar
@@ -219,9 +220,39 @@ def get_quandl_sharadar(free=True, download=False):
 
 def clean_sharadar(prices):
     """
-    Assets to check: NXG
+    Assets to check: 
+      - NXG
+      - AKTC
+      - MIX
+      - ATEL
+      - CNGL
+    
+    Problems to check:
+      - Open and Close outside Low-High.
+      - nan in prices (eg. SRNA1).
+      - zero prices (eg. HLIX).
     """
+    
     prices = prices.query('Volume > 0')
+    
+    prices = prices.assign(
+        Low = prices[['Open', 'High', 'Low', 'Close']].apply('min', axis=1),
+        High = prices[['Open', 'High', 'Low', 'Close']].apply('max', axis=1),
+    )
+    
+    prices = prices.query('High > 0')
+    prices.loc[prices.Open == 0, 'Open'] = prices.loc[prices.Open == 0, 'Close']
+    prices.loc[prices.Close == 0, 'Close'] = prices.loc[prices.Close == 0, 'Open']
+    prices.loc[np.all(prices[['Open', 'Close']] == 0, axis=1), ['Open', 'Close']] = \
+        prices.loc[np.all(prices[['Open', 'Close']] == 0, axis=1), ['High', 'High']]
+    prices.loc[prices.Low == 0, 'Low'] = \
+        prices.loc[prices.Low == 0, ['Open', 'High', 'Close']].apply('min', axis=1)
+    
+#     # See SRNA1
+#     price = price.assign(Open2 = price.Close.shift(1).fillna(method='bfill'))
+#     price.loc[np.isnan(price.Open), 'Open'] = price.loc[np.isnan(price.Open), 'Open2']
+#     price = price.drop('Open2', axis=1)
+#     price
     
     return prices
 
@@ -229,28 +260,37 @@ def clean_sharadar(prices):
 
 def get_sharadar_train():
     
-    prices = pandas.read_feather(QUANDL_PATH + 'Sharadar/sharadar_train.feather').set_index(['Ticker', 'Date'])
+    prices = pd.read_feather(QUANDL_PATH + 'Sharadar/sharadar_train.feather')
+    prices = prices.set_index(['Ticker', 'Date'])
     dir_train = os.listdir(QUANDL_PATH + 'Sharadar/train/')
     tickers = [f.replace('.feather', '') for f in dir_train]
 
+    assert set(prices.reset_index('Ticker').Ticker) == set(tickers)
+    
     return tickers, prices
 
 
 def get_sharadar_dev():
     
-    prices = pandas.read_feather(QUANDL_PATH + 'Sharadar/sharadar_dev.feather').set_index(['Ticker', 'Date'])
+    prices = pd.read_feather(QUANDL_PATH + 'Sharadar/sharadar_dev.feather')
+    prices = prices.set_index(['Ticker', 'Date'])
     dir_dev = os.listdir(QUANDL_PATH + 'Sharadar/dev/')
     tickers = [f.replace('.feather', '') for f in dir_dev]
 
+    assert set(prices.reset_index('Ticker').Ticker) == set(tickers)
+    
     return tickers, prices
 
 
 def get_sharadar_test():
     
-    prices = pandas.read_feather(QUANDL_PATH + 'Sharadar/sharadar_test.feather').set_index(['Ticker', 'Date'])
+    prices = pd.read_feather(QUANDL_PATH + 'Sharadar/sharadar_test.feather')
+    prices = prices.set_index(['Ticker', 'Date'])
     dir_test = os.listdir(QUANDL_PATH + 'Sharadar/test/')
     tickers = [f.replace('.feather', '') for f in dir_test]
 
+    assert set(prices.reset_index('Ticker').Ticker) == set(tickers)
+    
     return tickers, prices
 
 
@@ -277,7 +317,7 @@ def find_trends(df, sd=20., N=10000, double=False):
     """
     # Peaks and valleys of shoothed series
     df = smooth_price(df, sd, N, double)
-    df = df.assign(Trend=numpy.nan, n_Trend=numpy.nan, Max_Drawdown=numpy.nan)
+    df = df.assign(Trend=np.nan, n_Trend=np.nan, Max_Drawdown=np.nan)
     
     peaks, _ = find_peaks(df.Smoothed)
     valleys, _ = find_peaks(-df.Smoothed)
@@ -285,14 +325,14 @@ def find_trends(df, sd=20., N=10000, double=False):
     n_changes = min(len(peaks), len(valleys))
     if n_changes == 0:
         if df.Smoothed[-1] > df.Smoothed[0]:
-            peaks = numpy.ones(1, dtype=numpy.int32) * len(df) - 1
+            peaks = np.ones(1, dtype=np.int32) * len(df) - 1
         else:
-            valleys = numpy.ones(1, dtype=numpy.int32) * len(df) - 1
+            valleys = np.ones(1, dtype=np.int32) * len(df) - 1
     else:
         if valleys.max() > peaks.max(): # Last
-            peaks = numpy.concatenate((peaks, numpy.ones(1, dtype=numpy.int32) * len(df) - 1))
+            peaks = np.concatenate((peaks, np.ones(1, dtype=np.int32) * len(df) - 1))
         else:
-            valleys = numpy.concatenate((valleys, numpy.ones(1, dtype=numpy.int32) * len(df) - 1))
+            valleys = np.concatenate((valleys, np.ones(1, dtype=np.int32) * len(df) - 1))
         
     
 
@@ -302,7 +342,7 @@ def find_trends(df, sd=20., N=10000, double=False):
 
     
     # Max drawdown of long position when trending up, short position when trending down.
-    breakpoints = numpy.concatenate((numpy.zeros(1, dtype=numpy.int32), peaks + 1, valleys + 1))
+    breakpoints = np.concatenate((np.zeros(1, dtype=np.int32), peaks + 1, valleys + 1))
     breakpoints.sort()
     
     for b in range(1, len(breakpoints)):
@@ -316,14 +356,14 @@ def find_trends(df, sd=20., N=10000, double=False):
         close_b = close_b.sort_index()
         
         # True range
-        true_range_b = (numpy.max((res_b.High, res_b.Close.shift().fillna(method='bfill')), axis=0) - \
-                        numpy.min((res_b.Low, res_b.Close.shift().fillna(method='bfill')), axis=0)) / res_b.Close
+        true_range_b = (np.max((res_b.High, res_b.Close.shift().fillna(method='bfill')), axis=0) - \
+                        np.min((res_b.Low, res_b.Close.shift().fillna(method='bfill')), axis=0)) / res_b.Close
         
         ratio = close_b[-1] / close_b[0]
         if len(close_b) > 1:
-            icagr = numpy.log(ratio) * (364.25 / (close_b.index[-1] - close_b.index[0]).components.days)
+            icagr = np.log(ratio) * (364.25 / (close_b.index[-1] - close_b.index[0]).components.days)
         else:
-            icagr = numpy.zeros(1, dtype=numpy.float64)
+            icagr = np.zeros(1, dtype=np.float64)
 
         peak = close_b[0]
         low = peak
@@ -342,7 +382,7 @@ def find_trends(df, sd=20., N=10000, double=False):
         if max_drawdown != 0:
             bliss = - icagr / max_drawdown
         else:
-            bliss = numpy.nan
+            bliss = np.nan
 
         df.loc[res_b.index, 'n_Trend'] = int(b)
         df.loc[res_b.index[0], 'Max_Drawdown'] = - max_drawdown
@@ -361,21 +401,21 @@ def find_trends(df, sd=20., N=10000, double=False):
 def summarise_trends(df, sd=20., N=10000):
     trends = find_trends(df, sd, N)
     total_ratio = trends.groupby('n_Trend').first().Ratio.product()
-    total_icagr = numpy.log(total_ratio) * (364.25 / (trends.index[-1] - trends.index[0]).components.days)
+    total_icagr = np.log(total_ratio) * (364.25 / (trends.index[-1] - trends.index[0]).components.days)
     mean_icagr = trends.groupby('n_Trend').first().ICAGR.mean()
-    neg_icagr = numpy.sum(trends.groupby('n_Trend').first().ICAGR < 0)
+    neg_icagr = np.sum(trends.groupby('n_Trend').first().ICAGR < 0)
     mean_bliss = trends.groupby('n_Trend').first().Bliss.dropna().mean()
     max_drawdown = trends.groupby('n_Trend').first().Max_Drawdown.max()
     if max_drawdown > 0:
         bliss = total_icagr / max_drawdown
     else:
-        bliss = numpy.nan
+        bliss = np.nan
     
-    neg_freq = neg_icagr.astype(numpy.float64) / trends.n_Trend.max().astype(numpy.float64)
+    neg_freq = neg_icagr.astype(np.float64) / trends.n_Trend.max().astype(np.float64)
     
     res = DataFrame(trends.groupby('n_Trend').Trend.count().describe())
     res = res.transpose().assign(sd=sd, n_days=len(df)).reset_index().drop('index', axis=1)
-    res = res.assign(trend_freq=364.25*res['count'].astype(numpy.float64)/res.n_days.astype(numpy.float64))
+    res = res.assign(trend_freq=364.25*res['count'].astype(np.float64)/res.n_days.astype(np.float64))
     res = res.assign(Ratio=total_ratio,
                      ICAGR=total_icagr, mean_ICAGR=mean_icagr,
                      neg_ICAGR=neg_icagr, neg_freq=neg_freq,
@@ -385,22 +425,22 @@ def summarise_trends(df, sd=20., N=10000):
 
 
 def plot_trends(df, tit=''):
-    pal = pyplot.get_cmap('Paired').colors
+    pal = plt.get_cmap('Paired').colors
     
-    fig, ax = pyplot.subplots(figsize=(16, 5))
-    trans = matplotlib.transforms.blended_transform_factory(ax.transData, ax.transAxes)
+    fig, ax = plt.subplots(figsize=(16, 5))
+    trans = mpl.transforms.blended_transform_factory(ax.transData, ax.transAxes)
     if len(set(df.Trend.values)) > 1:
         ax.fill_between(df.index, 0, df.Trend.max(), where=df.Trend > 0, facecolor=pal[0],
                         alpha=0.25, transform=trans, label='Trend up')
         ax.fill_between(df.index, 0, df.Trend.max(), where=df.Trend < 0, facecolor=pal[4],
                         alpha=0.25, transform=trans, label='Trend down')
-    pyplot.plot(df.Close, label='Close')
-    pyplot.plot(df.Smoothed, label='Smoothed')
-    pyplot.plot(df.Close * (1 - df.Max_Drawdown * df.Trend), label='Stop-loss', alpha = 0.5)
-    pyplot.axhline(0, c='grey')
-    pyplot.legend()
-    pyplot.title(tit)
-    pyplot.show()
+    plt.plot(df.Close, label='Close')
+    plt.plot(df.Smoothed, label='Smoothed')
+    plt.plot(df.Close * (1 - df.Max_Drawdown * df.Trend), label='Stop-loss', alpha = 0.5)
+    plt.axhline(0, c='grey')
+    plt.legend()
+    plt.title(tit)
+    plt.show()
     
     
     

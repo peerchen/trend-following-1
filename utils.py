@@ -241,18 +241,16 @@ def clean_sharadar(prices):
     )
     
     prices = prices.query('High > 0')
-    prices.loc[prices.Open == 0, 'Open'] = prices.loc[prices.Open == 0, 'Close']
-    prices.loc[prices.Close == 0, 'Close'] = prices.loc[prices.Close == 0, 'Open']
-    prices.loc[np.all(prices[['Open', 'Close']] == 0, axis=1), ['Open', 'Close']] = \
-        prices.loc[np.all(prices[['Open', 'Close']] == 0, axis=1), ['High', 'High']]
-    prices.loc[prices.Low == 0, 'Low'] = \
-        prices.loc[prices.Low == 0, ['Open', 'High', 'Close']].apply('min', axis=1)
+#     prices.loc[prices.Open == 0, 'Open'] = prices.loc[prices.Open == 0, 'Close']
+#     prices.loc[prices.Close == 0, 'Close'] = prices.loc[prices.Close == 0, 'Open']
+#     prices.loc[np.all(prices[['Open', 'Close']] == 0, axis=1), ['Open', 'Close']] = \
+#         prices.loc[np.all(prices[['Open', 'Close']] == 0, axis=1), ['High', 'High']]
+#     prices.loc[prices.Low == 0, 'Low'] = \
+#         prices.loc[prices.Low == 0, ['Open', 'High', 'Close']].apply('min', axis=1)
     
-#     # See SRNA1
-#     price = price.assign(Open2 = price.Close.shift(1).fillna(method='bfill'))
-#     price.loc[np.isnan(price.Open), 'Open'] = price.loc[np.isnan(price.Open), 'Open2']
-#     price = price.drop('Open2', axis=1)
-#     price
+#     prices.loc[prices.Open.isna(), 'Open'] = prices.loc[prices.Open.isna(), 'Close']
+#     prices.loc[prices.Open.isna(), 'Open'] = prices.loc[prices.Open.isna(), 'High']
+#     prices.loc[prices.Close.isna(), 'Close'] = prices.loc[prices.Close.isna(), 'Low']
     
     return prices
 
@@ -265,6 +263,7 @@ def get_sharadar_train():
     dir_train = os.listdir(QUANDL_PATH + 'Sharadar/train/')
     tickers = [f.replace('.feather', '') for f in dir_train]
 
+    prices = clean_sharadar(prices)
     assert set(prices.reset_index('Ticker').Ticker) == set(tickers)
     
     return tickers, prices
@@ -277,6 +276,7 @@ def get_sharadar_dev():
     dir_dev = os.listdir(QUANDL_PATH + 'Sharadar/dev/')
     tickers = [f.replace('.feather', '') for f in dir_dev]
 
+    prices = clean_sharadar(prices)
     assert set(prices.reset_index('Ticker').Ticker) == set(tickers)
     
     return tickers, prices
@@ -289,6 +289,7 @@ def get_sharadar_test():
     dir_test = os.listdir(QUANDL_PATH + 'Sharadar/test/')
     tickers = [f.replace('.feather', '') for f in dir_test]
 
+    prices = clean_sharadar(prices)
     assert set(prices.reset_index('Ticker').Ticker) == set(tickers)
     
     return tickers, prices
@@ -311,13 +312,14 @@ def smooth_price(df, sd=20., N=10000, double=False):
     return df
 
 
-def find_trends(df, sd=20., N=10000, double=False):
+def find_trends(df, sd=30., N=10000, Smoothed=False, double=False):
     """
     Finds the trends and the maximum drawdown within trends for a Close price series.
     """
-    # Peaks and valleys of shoothed series
-    df = smooth_price(df, sd, N, double)
-    df = df.assign(Trend=np.nan, n_Trend=np.nan, Max_Drawdown=np.nan)
+    # Peaks and valleys of smoothed series
+    if not Smoothed:
+        df = smooth_price(df, sd, N, double)
+        df = df.assign(Trend=np.nan, n_Trend=np.nan, Max_Drawdown=np.nan)
     
     peaks, _ = find_peaks(df.Smoothed)
     valleys, _ = find_peaks(-df.Smoothed)
@@ -357,7 +359,8 @@ def find_trends(df, sd=20., N=10000, double=False):
         
         # True range
         true_range_b = (np.max((res_b.High, res_b.Close.shift().fillna(method='bfill')), axis=0) - \
-                        np.min((res_b.Low, res_b.Close.shift().fillna(method='bfill')), axis=0)) / res_b.Close
+                        np.min((res_b.Low, res_b.Close.shift().fillna(method='bfill')), axis=0)) / \
+                        res_b.Close
         
         ratio = close_b[-1] / close_b[0]
         if len(close_b) > 1:

@@ -226,6 +226,7 @@ def clean_sharadar(prices):
       - MIX
       - ATEL
       - CNGL
+      - KCG1
     
     Problems to check:
       - Open and Close outside Low-High.
@@ -236,8 +237,8 @@ def clean_sharadar(prices):
     prices = prices.query('Volume > 0')
     
     prices = prices.assign(
-        Low = prices[['Open', 'High', 'Low', 'Close']].apply('min', axis=1),
-        High = prices[['Open', 'High', 'Low', 'Close']].apply('max', axis=1),
+        Low = prices[['Open', 'High', 'Low', 'Close']].apply('min', axis=1).clip_lower(0),
+        High = prices[['Open', 'High', 'Low', 'Close']].apply('max', axis=1).clip_lower(0),
     )
     
     prices = prices.query('High > 0')
@@ -254,8 +255,21 @@ def clean_sharadar(prices):
     
     return prices
 
+def check_prices(prices):
+    assert (prices.Volume <= 0).sum() == 0
+    assert (prices.Open <= 0).sum() == 0
+    assert (prices.High <= 0).sum() == 0
+    assert (prices.Low <= 0).sum() == 0
+    assert (prices.Close <= 0).sum() == 0
 
+    assert prices.Open.isna().sum() == 0
+    assert prices.Close.isna().sum() == 0
+    assert (prices.Close - prices.High > 0).sum() == 0
+    assert (prices.Low - prices.Close > 0).sum() == 0
+    assert (prices.Open - prices.High > 0).sum() == 0
+    assert (prices.Low - prices.Open > 0).sum() == 0
 
+    
 def get_sharadar_train():
     
     prices = pd.read_feather(QUANDL_PATH + 'Sharadar/sharadar_train.feather')
@@ -264,6 +278,7 @@ def get_sharadar_train():
     tickers = [f.replace('.feather', '') for f in dir_train]
 
     prices = clean_sharadar(prices)
+    check_prices(prices)
     assert set(prices.reset_index('Ticker').Ticker) == set(tickers)
     
     return tickers, prices
@@ -277,6 +292,7 @@ def get_sharadar_dev():
     tickers = [f.replace('.feather', '') for f in dir_dev]
 
     prices = clean_sharadar(prices)
+    check_prices(prices)
     assert set(prices.reset_index('Ticker').Ticker) == set(tickers)
     
     return tickers, prices
@@ -290,6 +306,7 @@ def get_sharadar_test():
     tickers = [f.replace('.feather', '') for f in dir_test]
 
     prices = clean_sharadar(prices)
+    check_prices(prices)
     assert set(prices.reset_index('Ticker').Ticker) == set(tickers)
     
     return tickers, prices

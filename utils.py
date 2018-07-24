@@ -241,16 +241,16 @@ def clean_sharadar(prices):
     )
     
     prices = prices.query('High > 0')
-#     prices.loc[prices.Open == 0, 'Open'] = prices.loc[prices.Open == 0, 'Close']
-#     prices.loc[prices.Close == 0, 'Close'] = prices.loc[prices.Close == 0, 'Open']
-#     prices.loc[np.all(prices[['Open', 'Close']] == 0, axis=1), ['Open', 'Close']] = \
-#         prices.loc[np.all(prices[['Open', 'Close']] == 0, axis=1), ['High', 'High']]
-#     prices.loc[prices.Low == 0, 'Low'] = \
-#         prices.loc[prices.Low == 0, ['Open', 'High', 'Close']].apply('min', axis=1)
+    prices.loc[prices.Open == 0, 'Open'] = prices.loc[prices.Open == 0, 'Close']
+    prices.loc[prices.Close == 0, 'Close'] = prices.loc[prices.Close == 0, 'Open']
+    prices.loc[np.all(prices[['Open', 'Close']] == 0, axis=1), ['Open', 'Close']] = \
+        prices.loc[np.all(prices[['Open', 'Close']] == 0, axis=1), ['High', 'High']]
+    prices.loc[prices.Low == 0, 'Low'] = \
+        prices.loc[prices.Low == 0, ['Open', 'High', 'Close']].apply('min', axis=1)
     
-#     prices.loc[prices.Open.isna(), 'Open'] = prices.loc[prices.Open.isna(), 'Close']
-#     prices.loc[prices.Open.isna(), 'Open'] = prices.loc[prices.Open.isna(), 'High']
-#     prices.loc[prices.Close.isna(), 'Close'] = prices.loc[prices.Close.isna(), 'Low']
+    prices.loc[prices.Open.isna(), 'Open'] = prices.loc[prices.Open.isna(), 'Close']
+    prices.loc[prices.Open.isna(), 'Open'] = prices.loc[prices.Open.isna(), 'High']
+    prices.loc[prices.Close.isna(), 'Close'] = prices.loc[prices.Close.isna(), 'Low']
     
     return prices
 
@@ -353,32 +353,41 @@ def find_trends(df, sd=30., N=10000, Smoothed=False, double=False):
         res_b = df[trend_start:trend_end]
         trend_b = res_b.Trend[0]
 
-        # Adjust for position (long, short)
-        close_b = res_b.Close[0] + trend_b * (res_b.Close - res_b.Close[0])
-        close_b = close_b.sort_index()
-        
         # True range
         true_range_b = (np.max((res_b.High, res_b.Close.shift().fillna(method='bfill')), axis=0) - \
                         np.min((res_b.Low, res_b.Close.shift().fillna(method='bfill')), axis=0)) / \
                         res_b.Close
         
-        ratio = close_b[-1] / close_b[0]
-        if len(close_b) > 1:
-            icagr = np.log(ratio) * (364.25 / (close_b.index[-1] - close_b.index[0]).components.days)
+        # Adjust for position (long, short)
+        pos_b = res_b[['Close', 'High', 'Low']]
+        if trend_b < 0:
+            pos_b = pos_b.assign(
+                Range_High=res_b.High - res_b.Close,
+                Range_Low=res_b.Close - res_b.Low,
+                Close=res_b.Close[0] - (res_b.Close - res_b.Close[0])
+            )
+            pos_b = pos_b.assign(
+                High=res_b.Close + pos_b.Range_Low,
+                Low=res_b.Close - pos_b.Range_High,
+            )
+        
+        ratio = pos_b.Close[-1] / pos_b.Close[0]
+        if len(pos_b) > 1:
+            icagr = np.log(ratio) * (364.25 / (pos_b.index[-1] - pos_b.index[0]).components.days)
         else:
             icagr = np.zeros(1, dtype=np.float64)
 
-        peak = close_b[0]
+        peak = pos_b.High[0]
         low = peak
         drawdown = 0
         max_drawdown = 0
-        for i in range(1, len(close_b)):
+        for i in range(1, len(pos_b)):
             # Max drawdown
-            if close_b[i] > peak:
-                peak = close_b[i]
+            if pos_b.High[i] > peak:
+                peak = pos_b.High[i]
                 low = peak
-            if close_b[i] < low:
-                low = close_b[i]
+            if pos_b.Low[i] < low:
+                low = pos_b.Low[i]
                 drawdown = low / peak - 1
             max_drawdown = min(drawdown, max_drawdown)
             

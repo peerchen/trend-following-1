@@ -227,6 +227,7 @@ def clean_sharadar(prices):
       - ATEL
       - CNGL
       - KCG1
+      - IDWK
     
     Problems to check:
       - Open and Close outside Low-High.
@@ -465,7 +466,7 @@ def plot_trends(df, tit=''):
                         alpha=0.25, transform=trans, label='Trend down')
     plt.plot(df.Close, label='Close')
     plt.plot(df.Smoothed, label='Smoothed')
-    plt.plot(df.Close * (1 - df.Max_Drawdown * df.Trend), label='Stop-loss', alpha = 0.5)
+    plt.plot(df.Close * (1 - df.Max_Drawdown.fillna(method='ffill') * df.Trend), label='Stop-loss', alpha = 0.5)
     plt.axhline(0, c='grey')
     plt.legend()
     plt.title(tit)

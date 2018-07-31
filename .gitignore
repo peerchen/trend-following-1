@@ -1,0 +1,6 @@
+input/*
+.ipynb*
+altair*
+__*
+output/*
+quandl_api

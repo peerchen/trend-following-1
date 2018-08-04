@@ -16,6 +16,15 @@ from scipy.ndimage import filters
 
     
 # Utils
+
+def add_changes(df):
+    df = df.assign(Ch = df.Close.pct_change().add(1).apply('log').fillna(0))
+    df = df.assign(Ch2 = df.Ch.pow(2),
+                   Ch3 = df.Ch.pow(3),
+                   Ch4 = df.Ch.pow(4))
+    return df
+
+    
 def dict_list_to_DataFrame(dl): 
     dl = [{k: [i] for k, i in d.items()} for d in dl]
     out = pd.concat([DataFrame.from_dict(d) for d in dl], sort=False)
@@ -197,7 +206,7 @@ def get_quandl_sharadar(free=True, download=False):
         if download:
             sharadar = quandl.get_table('SHARADAR/SEP', paginate=True)
             sharadar = sharadar.rename({n: n.title() for n in sharadar.keys().values}, axis=1)
-            sharadar = sharadar.reset_index().drop('None', axis=1)
+            sharadar = sharadar.reset_index(drop=True)
             sharadar.to_feather(fname=QUANDL_PATH + 'Sharadar/sharadar_free.feather')
         else:
             sharadar = pd.read_feather(path=QUANDL_PATH + 'Sharadar/sharadar_free.feather')
@@ -330,7 +339,7 @@ def smooth_price(df, sd=20., N=10000, double=False):
     return df
 
 
-def find_trends(df, sd=30., N=10000, Smoothed=False, double=False):
+def find_trends(df, sd=20., N=10000, Smoothed=False, double=False):
     """
     Finds the trends and the maximum drawdown within trends for a Close price series.
     """
@@ -431,7 +440,8 @@ def find_trends(df, sd=30., N=10000, Smoothed=False, double=False):
 def summarise_trends(df, sd=20., N=10000):
     trends = find_trends(df, sd, N)
     total_ratio = trends.groupby('n_Trend').first().Ratio.product()
-    total_icagr = np.log(total_ratio) * (364.25 / (trends.index[-1] - trends.index[0]).components.days)
+    total_icagr = np.log(total_ratio) * \
+        (364.25 / (trends.index[-1] - trends.index[0]).components.days)
     mean_icagr = trends.groupby('n_Trend').first().ICAGR.mean()
     neg_icagr = np.sum(trends.groupby('n_Trend').first().ICAGR < 0)
     mean_bliss = trends.groupby('n_Trend').first().Bliss.dropna().mean()
@@ -444,7 +454,7 @@ def summarise_trends(df, sd=20., N=10000):
     neg_freq = neg_icagr.astype(np.float64) / trends.n_Trend.max().astype(np.float64)
     
     res = DataFrame(trends.groupby('n_Trend').Trend.count().describe())
-    res = res.transpose().assign(sd=sd, n_days=len(df)).reset_index().drop('index', axis=1)
+    res = res.transpose().assign(sd=sd, n_days=len(df)).reset_index(drop=True)
     res = res.assign(trend_freq=364.25*res['count'].astype(np.float64)/res.n_days.astype(np.float64))
     res = res.assign(Ratio=total_ratio,
                      ICAGR=total_icagr, mean_ICAGR=mean_icagr,
@@ -466,7 +476,8 @@ def plot_trends(df, tit=''):
                         alpha=0.25, transform=trans, label='Trend down')
     plt.plot(df.Close, label='Close')
     plt.plot(df.Smoothed, label='Smoothed')
-    plt.plot(df.Close * (1 - df.Max_Drawdown.fillna(method='ffill') * df.Trend), label='Stop-loss', alpha = 0.5)
+    plt.plot(df.Close * (1 - df.Max_Drawdown.fillna(method='ffill') * df.Trend),
+             label='Stop-loss', alpha = 0.5)
     plt.axhline(0, c='grey')
     plt.legend()
     plt.title(tit)
@@ -474,8 +485,13 @@ def plot_trends(df, tit=''):
     
     
     
+def clean_trends(df, min_icagr=0.5):
+    zero_idx = df.ICAGR.fillna(method='ffill') < min_icagr
+    if zero_idx.sum() > 0:
+        df.loc[zero_idx, 'Trend'] = 0
     
-    
+    return df
+
     
     
     

@@ -17,14 +17,47 @@ from scipy.ndimage import filters
     
 # Utils
 
-def add_changes(df):
+def add_changes(df, max_order=4):
     df = df.assign(Ch = df.Close.pct_change().add(1).apply('log').fillna(0))
-    df = df.assign(Ch2 = df.Ch.pow(2),
-                   Ch3 = df.Ch.pow(3),
-                   Ch4 = df.Ch.pow(4))
+    
+    if max_order > 1:
+        df = df.assign(**{'Ch' + str(o): df.Ch.pow(o) for o in range(2, max_order + 1)})
+    
     return df
 
+
+def add_technical(df, windows=[5, 20, 60, 120]):
+
+    # Simple moving average
+    df = df.assign(**{'SMA_' + str(w): df.Close.rolling(w, min_periods=0).mean()
+                      for w in windows})
+    # Volatility
+    df = df.assign(**{'sigma2_SMA_' + str(w): df.Ch2.rolling(w, min_periods=0).mean()
+                      for w in windows})
     
+    # Skewness
+    df = df.assign(**{'skew_SMA_' + str(w):
+                      df.Ch3.rolling(w, min_periods=0).mean() / \
+                          df['sigma2_SMA_' + str(w)].pow(3/2)
+                      for w in windows})
+    
+    # Kurtosis
+    df = df.assign(**{'kurt_SMA_' + str(w):
+                      df.Ch4.rolling(w, min_periods=0).mean() / \
+                          df['sigma2_SMA_' + str(w)].pow(2) - 3
+                      for w in windows})
+    
+    # Support and Resistance
+    df = df.assign(**{'Support_' + str(w): df.Low.rolling(w, min_periods=0).min()
+                      for w in windows})
+    df = df.assign(**{'Resistance_' + str(w): df.High.rolling(w, min_periods=0).max()
+                      for w in windows})
+    
+    df = df.fillna(method='bfill')
+    
+    return df
+
+
 def dict_list_to_DataFrame(dl): 
     dl = [{k: [i] for k, i in d.items()} for d in dl]
     out = pd.concat([DataFrame.from_dict(d) for d in dl], sort=False)

@@ -8,7 +8,6 @@ from datetime import datetime
 import matplotlib as mpl
 from matplotlib import pyplot as plt
 import matplotlib.transforms
-import quandl
 
 from scipy.signal import gaussian, find_peaks, find_peaks_cwt
 from scipy.ndimage import filters
@@ -237,6 +236,7 @@ def get_quandl_sharadar(free=True, download=False):
     
     if free:
         if download:
+            import quandl
             sharadar = quandl.get_table('SHARADAR/SEP', paginate=True)
             sharadar = sharadar.rename({n: n.title() for n in sharadar.keys().values}, axis=1)
             sharadar = sharadar.reset_index(drop=True)
